@@ -100,8 +100,10 @@ func TestKeyringDisabledByEnv(t *testing.T) {
 		t.Error("expected keyring to be enabled when the variable is empty")
 	}
 
-	// End to end: with the variable set, storing/reading keys works via
-	// the encrypted backend and no keyring probe state is produced.
+	// End to end: with the variable set (re-set here — the assertion above
+	// cleared it), storing/reading keys works via the encrypted backend
+	// and no keyring probe state is produced.
+	t.Setenv("TOKEN_USAGE_KEYRING_DISABLED", "1")
 	origDisabled := keyringDisabled
 	keyringDisabled = false
 	keyringOnce = sync.Once{}
