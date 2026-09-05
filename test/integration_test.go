@@ -41,6 +41,7 @@ func cliRun(t *testing.T, binary string, home string, args ...string) (string, s
 		"LC_ALL=en_US.UTF-8",
 		"NO_COLOR=1",
 		"TOKEN_USAGE_MASTER_PASSWORD=ci-test-master-password",
+		"TOKEN_USAGE_KEYRING_DISABLED=1",
 	)
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError

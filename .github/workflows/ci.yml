@@ -54,6 +54,9 @@ jobs:
       - name: Test
         env:
           TOKEN_USAGE_MASTER_PASSWORD: ci-test-master-password
+          # Never probe the real system keyring in tests (macOS SecItemAdd
+          # can block); credential tests use the encrypted-file backend.
+          TOKEN_USAGE_KEYRING_DISABLED: "1"
         run: go test -v -race -count=1 ./...
 
   build:

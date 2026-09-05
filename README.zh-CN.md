@@ -310,6 +310,7 @@ use_master_password: false
 | `TOKEN_USAGE_KEYRING_PASSWORD` | keyring 文件后端的密码 |
 | `TOKEN_USAGE_LANG` | 显示语言覆盖（`zh` 或 `en`） |
 | `ARKCLI_SKIP_POSTINSTALL` | 跳过 ark-cli 安装器的副作用（agent skill 注入） |
+| `TOKEN_USAGE_KEYRING_DISABLED` | 禁用系统 keyring 探测，改用加密文件后端（适用于无 keyring 的环境） |
 
 ## 安全
 

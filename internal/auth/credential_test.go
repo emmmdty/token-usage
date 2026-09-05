@@ -2,6 +2,7 @@ package auth
 
 import (
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -82,5 +83,51 @@ func TestExtractKeyID(t *testing.T) {
 		if result != tt.expected {
 			t.Errorf("ExtractKeyID(%s) = %s, want %s", tt.key, result, tt.expected)
 		}
+	}
+}
+
+// TOKEN_USAGE_KEYRING_DISABLED must switch every credential operation to
+// the encrypted-file backend without ever probing the system keyring
+// (headless machines, CI, and tests where SecItemAdd can block).
+func TestKeyringDisabledByEnv(t *testing.T) {
+	t.Setenv("TOKEN_USAGE_KEYRING_DISABLED", "1")
+	if !keyringDisabledByEnv() {
+		t.Error("expected keyring to be disabled when TOKEN_USAGE_KEYRING_DISABLED is set")
+	}
+
+	t.Setenv("TOKEN_USAGE_KEYRING_DISABLED", "")
+	if keyringDisabledByEnv() {
+		t.Error("expected keyring to be enabled when the variable is empty")
+	}
+
+	// End to end: with the variable set, storing/reading keys works via
+	// the encrypted backend and no keyring probe state is produced.
+	origDisabled := keyringDisabled
+	keyringDisabled = false
+	keyringOnce = sync.Once{}
+	ring = nil
+	keyringAvailable = false
+	t.Cleanup(func() {
+		keyringOnce = sync.Once{}
+		keyringDisabled = origDisabled
+		ring = nil
+		keyringAvailable = false
+	})
+
+	setTestSecretsPath(t)
+	resetMasterPasswordCache()
+	t.Setenv("TOKEN_USAGE_MASTER_PASSWORD", "env-disable-test")
+
+	if IsKeyringAvailable() {
+		t.Error("IsKeyringAvailable must be false with TOKEN_USAGE_KEYRING_DISABLED set")
+	}
+	if err := StoreAPIKey("svc", "acct", "sk-env-disable"); err != nil {
+		t.Fatalf("StoreAPIKey should fall back to the encrypted backend: %v", err)
+	}
+	if got, err := GetAPIKey("svc", "acct"); err != nil || got != "sk-env-disable" {
+		t.Fatalf("GetAPIKey = %q, %v", got, err)
+	}
+	if keyringAvailable || ring != nil {
+		t.Error("the system keyring must not have been probed")
 	}
 }

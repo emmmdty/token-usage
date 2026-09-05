@@ -21,12 +21,19 @@ var (
 	keyringDisabled bool
 )
 
+// keyringDisabledByEnv reports whether the system keyring probe should be
+// skipped entirely (headless/CI environments where a real keychain is
+// unavailable or can block on a security prompt).
+func keyringDisabledByEnv() bool {
+	return os.Getenv("TOKEN_USAGE_KEYRING_DISABLED") != ""
+}
+
 // ensureKeyring lazily opens the system keyring and probes it with a
 // write/read cycle. Keeping this out of init() makes importing the package
 // side-effect free (important for tests and headless environments).
 func ensureKeyring() {
 	keyringOnce.Do(func() {
-		if keyringDisabled {
+		if keyringDisabled || keyringDisabledByEnv() {
 			return
 		}
 

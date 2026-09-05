@@ -314,6 +314,7 @@ use_master_password: false
 | `TOKEN_USAGE_KEYRING_PASSWORD` | Password for keyring file backend |
 | `TOKEN_USAGE_LANG` | Display language override (`zh` or `en`) |
 | `ARKCLI_SKIP_POSTINSTALL` | Skip ark-cli installer side effects (agent skill injection) |
+| `TOKEN_USAGE_KEYRING_DISABLED` | Disable system keyring probing and use the encrypted file backend (headless/CI environments) |
 
 ## Security
 
