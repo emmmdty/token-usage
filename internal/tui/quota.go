@@ -144,7 +144,7 @@ func formatTable(results []AccountResult, style QuotaStyle, theme Theme, width i
 
 	for _, r := range results {
 		if r.IsCurrent {
-			b.WriteString("  " + theme.Muted.Render(i18n.T("tui.active")) + theme.Active.Render(shortLabel(r)) + "\n")
+			b.WriteString("  " + theme.Muted.Render(i18n.T("tui.active")) + theme.Active.Render(providerCell(r)) + "\n")
 			break
 		}
 	}
@@ -178,16 +178,6 @@ func accountCell(r AccountResult) string {
 		return r.AccountLabel
 	}
 	return r.Name
-}
-
-// shortLabel renders "provider · account" for the summary lines, collapsing
-// to one part when both are the same.
-func shortLabel(r AccountResult) string {
-	p, a := providerCell(r), accountCell(r)
-	if p == a {
-		return p
-	}
-	return p + " · " + a
 }
 
 // legendLines maps the codes used in the table back to full provider names
@@ -527,7 +517,7 @@ func findBestAccount(results []AccountResult) string {
 		}
 		if maxPercent < bestPercent {
 			bestPercent = maxPercent
-			bestName = shortLabel(r)
+			bestName = providerCell(r)
 		}
 	}
 	return bestName
@@ -546,7 +536,7 @@ func findNextReset(results []AccountResult) string {
 			}
 			if earliest.IsZero() || resetTime.Before(earliest) {
 				earliest = resetTime
-				name = shortLabel(r)
+				name = providerCell(r)
 			}
 		}
 	}

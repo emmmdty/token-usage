@@ -169,6 +169,24 @@ func printJSON(data interface{}) error {
 }
 
 func printQuotaTable(results []accountResult, cfg *config.Config) error {
+	style := tui.QuotaStyle{
+		WarningThreshold: cfg.ColorThresholds.Warning,
+		DangerThreshold:  cfg.ColorThresholds.Danger,
+	}
+	if style.WarningThreshold == 0 {
+		style.WarningThreshold = 50
+	}
+	if style.DangerThreshold == 0 {
+		style.DangerThreshold = 80
+	}
+
+	output := tui.FormatQuotaOverview(toTuiResults(results), style, "")
+	return writeOutput(output)
+}
+
+// toTuiResults maps query results to the render model, carrying the
+// provider code/display split and the plain account label.
+func toTuiResults(results []accountResult) []tui.AccountResult {
 	tuiResults := make([]tui.AccountResult, len(results))
 	for i, r := range results {
 		var note string
@@ -186,20 +204,7 @@ func printQuotaTable(results []accountResult, cfg *config.Config) error {
 			IsCurrent:       r.IsCurrent,
 		}
 	}
-
-	style := tui.QuotaStyle{
-		WarningThreshold: cfg.ColorThresholds.Warning,
-		DangerThreshold:  cfg.ColorThresholds.Danger,
-	}
-	if style.WarningThreshold == 0 {
-		style.WarningThreshold = 50
-	}
-	if style.DangerThreshold == 0 {
-		style.DangerThreshold = 80
-	}
-
-	output := tui.FormatQuotaOverview(tuiResults, style, "")
-	return writeOutput(output)
+	return tuiResults
 }
 
 // makeProviderResult converts a provider.Usage into the JSON shape with the

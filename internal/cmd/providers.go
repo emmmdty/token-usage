@@ -68,21 +68,6 @@ type providersResponse struct {
 }
 
 func printProvidersTable(results []providerResult, cfg *config.Config) error {
-	tuiResults := make([]tui.AccountResult, len(results))
-	for i, r := range results {
-		var note string
-		if r.Usage != nil {
-			note = r.Usage.Note
-		}
-		tuiResults[i] = tui.AccountResult{
-			Name:      r.Name,
-			Usage:     r.Usage,
-			Error:     r.Error,
-			Note:      note,
-			IsCurrent: r.IsCurrent,
-		}
-	}
-
 	style := tui.QuotaStyle{
 		WarningThreshold: cfg.ColorThresholds.Warning,
 		DangerThreshold:  cfg.ColorThresholds.Danger,
@@ -94,7 +79,7 @@ func printProvidersTable(results []providerResult, cfg *config.Config) error {
 		style.DangerThreshold = 80
 	}
 
-	output := tui.FormatQuotaOverview(tuiResults, style, "")
+	output := tui.FormatQuotaOverview(toTuiResults(results), style, "")
 	return writeOutput(output)
 }
 
