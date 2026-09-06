@@ -173,6 +173,7 @@ var (
 	addUseLocal     bool
 	addProfile      string
 	addLocalRef     string
+	addArkcliHome   string
 )
 
 var providerAddCmd = &cobra.Command{
@@ -236,6 +237,7 @@ Examples:
 				plan:     addPlan,
 				profile:  addProfile,
 				localRef: addLocalRef,
+				home:     addArkcliHome,
 			})
 		case "custom":
 			return addCustomProvider(cfg, cfgPath, reader, addOpts{
@@ -261,6 +263,7 @@ type addOpts struct {
 	baseURL   string
 	profile   string // volcengine: arkcli profile (multi-account)
 	localRef  string // volcengine: opencode.json provider entry (multi-account)
+	home      string // volcengine: alternate arkcli HOME with its own login
 }
 
 // arkcliProfileOptions renders one picker line per arkcli profile:
@@ -325,7 +328,7 @@ func addPresetProvider(cfg *config.Config, cfgPath string, reader *bufio.Reader,
 	// key-backed accounts match their profile by key suffix automatically.
 	profile := opts.profile
 	if providerType == "volcengine" && profile == "" && opts.apiKey == "" && !useLocal && provider.ArkcliAvailable() {
-		profiles, err := provider.ArkcliProfiles()
+		profiles, err := provider.ArkcliProfiles(opts.home)
 		if err == nil && len(profiles) > 0 {
 			yes, err := promptYesNo(reader, "  "+i18n.T("prompt.profile_bind"), true)
 			if err != nil {
@@ -362,7 +365,7 @@ func addPresetProvider(cfg *config.Config, cfgPath string, reader *bufio.Reader,
 		// key needed. Validate the profile live so broken bindings never
 		// reach the config.
 		fmt.Println("  " + i18n.T("output.provider.add.validating_profile"))
-		probe := provider.NewVolcengineProvider("", plan, profile)
+		probe := provider.NewVolcengineProvider("", plan, profile, opts.home)
 		if _, err := probe.GetUsage(); err != nil {
 			return fmt.Errorf("%s", i18n.T("error.account.key_validation_failed", err))
 		}
@@ -511,6 +514,7 @@ func addVolcengineLocalAccounts(cfg *config.Config, cfgPath string, p config.Pre
 			Plan:             plan,
 			Profile:          profile,
 			OpencodeProvider: e.ID,
+			ArkcliHome:       opts.home,
 			CreatedAt:        timeNow(),
 		}
 		// Re-adding refreshes the binding in place instead of piling up
@@ -851,6 +855,7 @@ func init() {
 	providerAddCmd.Flags().BoolVar(&addUseLocal, "use-local", false, "reuse the locally detected account")
 	providerAddCmd.Flags().StringVar(&addProfile, "profile", "", "volcengine arkcli profile (multi-account)")
 	providerAddCmd.Flags().StringVar(&addLocalRef, "opencode-provider", "", "volcengine: opencode.json provider entry to read the key from (multi-account)")
+	providerAddCmd.Flags().StringVar(&addArkcliHome, "arkcli-home", "", "volcengine: alternate arkcli HOME directory holding a separate login (multi-account)")
 
 	providerCmd.AddCommand(providerListCmd)
 	providerCmd.AddCommand(providerAddCmd)

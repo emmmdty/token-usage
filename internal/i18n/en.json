@@ -333,6 +333,7 @@
   "provider.volcengine.key_rejected": "key rejected: HTTP %d",
   "provider.volcengine.note_rate_limit": "rate-limit snapshot (request-based); install arkcli and log in for full quota windows",
   "provider.volcengine.note_key_valid": "key valid; install arkcli (npm i -g @volcengine/ark-cli) and run 'arkcli auth login' for full quota windows",
+  "provider.volcengine.note_key_valid_home": "key valid; log in via this account's arkcli HOME for full quota windows: HOME=%s arkcli auth login volc-sso",
   "provider.volcengine.note_arkcli_failed": "arkcli query failed (%s); %s",
   "provider.volcengine.arkcli_required": "arkcli is not installed",
   "provider.volcengine.profile_list_failed": "failed to list arkcli profiles: %s",

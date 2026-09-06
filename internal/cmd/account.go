@@ -42,6 +42,7 @@ var (
 	acctPlan     string
 	acctProfile  string
 	acctLocalRef string
+	acctHome     string
 )
 
 var accountAddCmd = &cobra.Command{
@@ -112,6 +113,7 @@ Non-interactive examples:
 			plan:     acctPlan,
 			profile:  acctProfile,
 			localRef: acctLocalRef,
+			home:     acctHome,
 		})
 	},
 }
@@ -281,10 +283,14 @@ func renderAccountList(cfg *config.Config, providerFilter string) string {
 			if acc.Profile != "" {
 				profile = "  Profile: " + acc.Profile
 			}
+			home := ""
+			if acc.ArkcliHome != "" {
+				home = "  arkcli-home: " + acc.ArkcliHome
+			}
 			padded := pa.ProviderID + "/" + pa.Account
 			padded += strings.Repeat(" ", nameWidth-runewidth.StringWidth(padded))
-			fmt.Fprintf(&out, "  %s%s  Source: %-5s %s  Status: %-10s  Last verified: %s%s\n",
-				marker, padded, acc.Source, keyID, status, lastVerified, profile)
+			fmt.Fprintf(&out, "  %s%s  Source: %-5s %s  Status: %-10s  Last verified: %s%s%s\n",
+				marker, padded, acc.Source, keyID, status, lastVerified, profile, home)
 		}
 		out.WriteString("\n")
 	}
@@ -826,6 +832,7 @@ func init() {
 	accountAddCmd.Flags().StringVar(&acctPlan, "plan", "", "volcengine plan (coding|agent)")
 	accountAddCmd.Flags().StringVar(&acctProfile, "profile", "", "volcengine arkcli profile (multi-account)")
 	accountAddCmd.Flags().StringVar(&acctLocalRef, "opencode-provider", "", "volcengine: opencode.json provider entry to read the key from (multi-account)")
+	accountAddCmd.Flags().StringVar(&acctHome, "arkcli-home", "", "volcengine: alternate arkcli HOME directory holding a separate login (multi-account)")
 	accountListCmd.Flags().StringVarP(&acctProvider, "provider", "p", "", "filter by provider")
 
 	accountCmd.AddCommand(accountAddCmd)

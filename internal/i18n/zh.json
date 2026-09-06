@@ -335,6 +335,7 @@
   "provider.volcengine.key_rejected": "Key 被拒绝：HTTP %d",
   "provider.volcengine.note_rate_limit": "速率限制快照（基于请求）；安装 arkcli 并登录以获取完整配额窗口",
   "provider.volcengine.note_key_valid": "Key 有效；安装 arkcli（npm i -g @volcengine/ark-cli）并运行 'arkcli auth login' 获取完整配额窗口",
+  "provider.volcengine.note_key_valid_home": "Key 有效；在该账户的 arkcli HOME 中登录以获取完整配额窗口：HOME=%s arkcli auth login volc-sso",
   "provider.volcengine.note_arkcli_failed": "arkcli 查询失败（%s）；%s",
   "provider.volcengine.arkcli_required": "arkcli 未安装",
   "provider.volcengine.profile_list_failed": "arkcli profile 列表获取失败：%s",

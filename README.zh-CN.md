@@ -56,10 +56,25 @@ token-usage account add volcengine --use-local
 # 检测到 2 个火山引擎账号（opencode.json）。全部添加？[Y/n]
 ```
 
-当账户的 key 与某个已登录的 arkcli profile 匹配（按 key 尾号匹配，每个账号
-执行一次 `arkcli auth login volc-sso`）时，可获取完整配额窗口；否则走 key
-探测，窗口显示 `n/a`。也可以用 `--profile` 显式绑定 profile，或用
-`--opencode-provider <id>` 只添加某一个条目。
+当账户的 key 与某个已登录的 arkcli profile 匹配（按 key 尾号匹配）时，可获取
+完整配额窗口；否则走 key 探测，窗口显示 `n/a`。也可以用 `--profile` 显式绑定
+profile，或用 `--opencode-provider <id>` 只添加某一个条目。
+
+arkcli 的**每个 HOME 只保留一个登录身份**，要同时监控两个火山账号的完整
+窗口，需要给每个账号准备一个独立的 arkcli HOME：
+
+```bash
+mkdir -p ~/.config/token-usage/arkcli-homes/coding-plan{,-2}
+HOME=~/.config/token-usage/arkcli-homes/coding-plan   arkcli auth login volc-sso  # 手机号 1
+HOME=~/.config/token-usage/arkcli-homes/coding-plan-2 arkcli auth login volc-sso  # 手机号 2
+
+token-usage account add volcengine coding-plan \
+  --plan coding --use-local \
+  --opencode-provider Volcano-Engine-coding-plan \
+  --arkcli-home ~/.config/token-usage/arkcli-homes/coding-plan
+```
+
+之后每个账户都通过自己的登录独立查询，互不影响。
 
 ## 安装
 

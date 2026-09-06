@@ -69,9 +69,13 @@ type Account struct {
 	Profile string `yaml:"profile,omitempty"` // volcengine: arkcli profile (multi-account)
 	// OpencodeProvider pins which provider.<id> entry of opencode.json a
 	// volcengine "local" account reads its key from (multi-account).
-	OpencodeProvider string    `yaml:"opencode_provider,omitempty"`
-	CreatedAt        time.Time `yaml:"created_at"`
-	LastVerified     time.Time `yaml:"last_verified,omitempty"`
+	OpencodeProvider string `yaml:"opencode_provider,omitempty"`
+	// ArkcliHome points at an alternate arkcli HOME directory holding a
+	// separate login (volcengine multi-account: arkcli keeps a single
+	// identity per HOME).
+	ArkcliHome   string    `yaml:"arkcli_home,omitempty"`
+	CreatedAt    time.Time `yaml:"created_at"`
+	LastVerified time.Time `yaml:"last_verified,omitempty"`
 }
 
 // CredentialPath returns the local credential file for "local" source

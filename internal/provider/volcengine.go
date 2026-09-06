@@ -32,19 +32,21 @@ const volcengineAPIBase = "https://ark.cn-beijing.volces.com"
 //     rate-limit headers are unreliable on Ark (often absent on 200), so
 //     the usage is reported as unknown with a note pointing at arkcli.
 type VolcengineProvider struct {
-	apiKey    string
-	plan      string // "coding" | "agent"
-	profile   string // arkcli profile name, "" = auto-match or arkcli default
-	arkcli    string // resolved path, "" = not installed
-	probeBase string // override for tests
+	apiKey     string
+	plan       string // "coding" | "agent"
+	profile    string // arkcli profile name, "" = auto-match or arkcli default
+	arkcliHome string // alternate arkcli HOME (separate login), "" = real HOME
+	arkcli     string // resolved path, "" = not installed
+	probeBase  string // override for tests
 }
 
-func NewVolcengineProvider(apiKey, plan, profile string) *VolcengineProvider {
+func NewVolcengineProvider(apiKey, plan, profile, arkcliHome string) *VolcengineProvider {
 	return &VolcengineProvider{
-		apiKey:  apiKey,
-		plan:    plan,
-		profile: profile,
-		arkcli:  lookPathArkcli(),
+		apiKey:     apiKey,
+		plan:       plan,
+		profile:    profile,
+		arkcliHome: arkcliHome,
+		arkcli:     lookPathArkcli(),
 	}
 }
 
@@ -74,8 +76,9 @@ type ArkcliProfile struct {
 	DefaultAPIKey string `json:"default_api_key"` // masked, e.g. "ark****fa7d"
 }
 
-// matchProfileForKey resolves the arkcli profile for an API key. Variable
-// so tests can stub it (the real lookup shells out to arkcli).
+// matchProfileForKey resolves the arkcli profile for an API key in the
+// given arkcli HOME. Variable so tests can stub it (the real lookup shells
+// out to arkcli).
 var matchProfileForKey = MatchArkcliProfileForKey
 
 // MatchArkcliProfileForKey returns the name of the arkcli profile whose
@@ -83,8 +86,8 @@ var matchProfileForKey = MatchArkcliProfileForKey
 // its profile listing ("ark****fa7d"), so a profile matches when its
 // visible suffix equals the key's tail. Returns "" when nothing matches
 // (or the match is ambiguous and no profile is marked default).
-func MatchArkcliProfileForKey(apiKey string) string {
-	profiles, err := ArkcliProfiles()
+func MatchArkcliProfileForKey(apiKey, home string) string {
+	profiles, err := ArkcliProfiles(home)
 	if err != nil {
 		return ""
 	}
@@ -119,12 +122,13 @@ func maskedKeySuffix(masked string) string {
 }
 
 // ArkcliProfiles lists the ark CLI's login profiles via
-// `arkcli profile list --format json`.
-func ArkcliProfiles() ([]ArkcliProfile, error) {
-	return arkcliProfiles(lookPathArkcli())
+// `arkcli profile list --format json`, resolved in the given HOME
+// ("" = the real HOME).
+func ArkcliProfiles(home string) ([]ArkcliProfile, error) {
+	return arkcliProfiles(lookPathArkcli(), home)
 }
 
-func arkcliProfiles(bin string) ([]ArkcliProfile, error) {
+func arkcliProfiles(bin, home string) ([]ArkcliProfile, error) {
 	if bin == "" {
 		return nil, errors.New(i18n.T("provider.volcengine.arkcli_required"))
 	}
@@ -133,7 +137,7 @@ func arkcliProfiles(bin string) ([]ArkcliProfile, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, bin, "profile", "list", "--format", "json")
-	cmd.Env = arkcliEnv()
+	cmd.Env = arkcliEnv(home)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -171,7 +175,7 @@ func (p *VolcengineProvider) GetUsage() (*Usage, error) {
 			// Ride the arkcli login only when the account's key provably
 			// belongs to it; otherwise the probe below reports
 			// identity-correct data instead of another account's quota.
-			profile = matchProfileForKey(p.apiKey)
+			profile = matchProfileForKey(p.apiKey, p.arkcliHome)
 		}
 		if profile != "" || p.apiKey == "" {
 			usage, err := p.usageViaArkcli(profile)
@@ -196,14 +200,33 @@ func (p *VolcengineProvider) GetUsage() (*Usage, error) {
 
 // arkcliEnv appends the update-suppression and caller-attribution variables
 // to the inherited environment. Replacing os.Environ() entirely would break
-// the arkcli wrapper (its node shebang needs PATH) and the CLI itself
-// (it resolves its login state under $HOME).
-func arkcliEnv() []string {
-	return append(os.Environ(),
+// the arkcli wrapper (its node shebang needs PATH) and the CLI itself.
+// With a non-empty home, HOME/USERPROFILE are replaced (not appended: the
+// first occurrence would win) so arkcli resolves its login state from that
+// account's own HOME — the trick behind multi-account support.
+func arkcliEnv(home string) []string {
+	env := append([]string{}, os.Environ()...)
+	env = append(env,
 		"ARKCLI_NO_UPDATE_NOTIFIER=1",
 		"ARKCLI_CALLER_TYPE=ai_agent",
 		"ARKCLI_CALLER_NAME=token-usage",
 	)
+	if home != "" {
+		env = replaceEnvValue(env, "HOME", home)
+		env = replaceEnvValue(env, "USERPROFILE", home)
+	}
+	return env
+}
+
+// replaceEnvValue replaces every KEY=... entry's value, keeping position.
+func replaceEnvValue(env []string, key, val string) []string {
+	prefix := key + "="
+	for i, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			env[i] = prefix + val
+		}
+	}
+	return env
 }
 
 type arkcliPeriod struct {
@@ -261,7 +284,7 @@ func (p *VolcengineProvider) usageViaArkcli(profile string) (*Usage, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, p.arkcli, p.arkcliArgs(profile)...)
-	cmd.Env = arkcliEnv()
+	cmd.Env = arkcliEnv(p.arkcliHome)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -379,7 +402,11 @@ func (p *VolcengineProvider) usageViaProbe() (*Usage, error) {
 		// time, so no ResetAt can be derived from the headers.
 		usage.Note = i18n.T("provider.volcengine.note_rate_limit")
 	} else {
-		usage.Note = i18n.T("provider.volcengine.note_key_valid")
+		if p.arkcliHome != "" {
+			usage.Note = i18n.T("provider.volcengine.note_key_valid_home", p.arkcliHome)
+		} else {
+			usage.Note = i18n.T("provider.volcengine.note_key_valid")
+		}
 	}
 	return usage, nil
 }

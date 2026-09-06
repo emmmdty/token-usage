@@ -176,6 +176,39 @@ func TestVolcengineArkcliNoProfileOmitsFlag(t *testing.T) {
 	}
 }
 
+func TestVolcengineArkcliHomeEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake arkcli requires a POSIX shell")
+	}
+	dir := t.TempDir()
+	altHome := filepath.Join(dir, "alt-home")
+	if err := os.MkdirAll(altHome, 0755); err != nil {
+		t.Fatal(err)
+	}
+	argsFile := filepath.Join(dir, "env.txt")
+	script := `#!/bin/sh
+echo "$HOME" > "$TU_TEST_ARGS_FILE"
+echo '{"items":[{"product":"coding-plan","subscribed":true,"periods":[{"label":"session","percent":1}]}]}'
+`
+	bin := filepath.Join(dir, "arkcli")
+	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake arkcli: %v", err)
+	}
+	t.Setenv("TU_TEST_ARGS_FILE", argsFile)
+
+	p := &VolcengineProvider{plan: PlanCoding, arkcli: bin, arkcliHome: altHome}
+	if _, err := p.GetUsage(); err != nil {
+		t.Fatalf("arkcli path failed: %v", err)
+	}
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("fake arkcli did not record HOME: %v", err)
+	}
+	if got := strings.TrimSpace(string(data)); got != altHome {
+		t.Errorf("arkcli ran with HOME=%q, want %q", got, altHome)
+	}
+}
+
 func TestArkcliProfilesParsing(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake arkcli requires a POSIX shell")
@@ -189,7 +222,7 @@ echo '{"default_profile":"p1","profiles":[{"name":"p1","display_name":"Plan A","
 		t.Fatalf("failed to write fake arkcli: %v", err)
 	}
 
-	profiles, err := arkcliProfiles(bin)
+	profiles, err := arkcliProfiles(bin, "")
 	if err != nil {
 		t.Fatalf("arkcliProfiles failed: %v", err)
 	}
@@ -203,7 +236,7 @@ echo '{"default_profile":"p1","profiles":[{"name":"p1","display_name":"Plan A","
 		t.Errorf("unexpected second profile: %+v", profiles[1])
 	}
 
-	if _, err := arkcliProfiles(""); err == nil {
+	if _, err := arkcliProfiles("", ""); err == nil {
 		t.Error("expected error when arkcli is missing")
 	}
 }
@@ -258,7 +291,7 @@ echo '{"items":[{"product":"coding-plan","subscribed":true,"periods":[{"label":"
 	}
 	t.Setenv("TU_TEST_ARGS_FILE", argsFile)
 	old := matchProfileForKey
-	matchProfileForKey = func(string) string { return "p1" }
+	matchProfileForKey = func(string, string) string { return "p1" }
 	defer func() { matchProfileForKey = old }()
 
 	p := &VolcengineProvider{apiKey: "ark-k", plan: PlanCoding, arkcli: bin}
@@ -288,7 +321,7 @@ func TestVolcengineGetUsage_NoMatchFallsBackToProbe(t *testing.T) {
 	defer server.Close()
 
 	old := matchProfileForKey
-	matchProfileForKey = func(string) string { return "" } // key belongs to no logged-in profile
+	matchProfileForKey = func(string, string) string { return "" } // key belongs to no logged-in profile
 	defer func() { matchProfileForKey = old }()
 
 	p := &VolcengineProvider{apiKey: "ark-other-account", plan: PlanCoding, arkcli: "/nonexistent/arkcli", probeBase: server.URL}

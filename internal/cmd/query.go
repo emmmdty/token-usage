@@ -108,7 +108,7 @@ func resolveLocalKey(cfg *config.Config, providerID, account string) (func() (*p
 		if keyErr != nil && acc.Profile == "" {
 			return nil, keyErr
 		}
-		p := provider.NewVolcengineProvider(apiKey, plan, acc.Profile)
+		p := provider.NewVolcengineProvider(apiKey, plan, acc.Profile, acc.ArkcliHome)
 		return func() (*provider.Usage, error) { return p.GetUsage() }, nil
 	}
 	return nil, fmt.Errorf("provider '%s' does not support local credentials", providerID)
@@ -247,8 +247,9 @@ func buildTargets(cfg *config.Config, providerFilter, accountFilter string) ([]q
 				}
 				// Credential-free: arkcli's login state (selected via the
 				// account's profile) is the credential.
+				acc := cfg.Providers["volcengine"].Accounts[pa.Account]
 				plan, profile := volcenginePlanProfile(cfg, pa.Account)
-				p := provider.NewVolcengineProvider("", plan, profile)
+				p := provider.NewVolcengineProvider("", plan, profile, acc.ArkcliHome)
 				return func() (*provider.Usage, error) { return p.GetUsage() }, nil
 			case pa.Data.Source == config.SourceLocal:
 				return resolveLocalKey(cfg, pa.ProviderID, pa.Account)
@@ -258,8 +259,9 @@ func buildTargets(cfg *config.Config, providerFilter, accountFilter string) ([]q
 					return nil, err
 				}
 				if pa.ProviderID == "volcengine" {
+					acc := cfg.Providers["volcengine"].Accounts[pa.Account]
 					plan, profile := volcenginePlanProfile(cfg, pa.Account)
-					p := provider.NewVolcengineProvider(key, plan, profile)
+					p := provider.NewVolcengineProvider(key, plan, profile, acc.ArkcliHome)
 					return func() (*provider.Usage, error) { return p.GetUsage() }, nil
 				}
 				if q, ok := provider.LookupKeyQuery(pa.ProviderID); ok {
@@ -430,7 +432,7 @@ func filepathDir(path string) string { return filepath.Dir(path) }
 func validateProviderKey(providerType, plan, apiKey string) error {
 	switch providerType {
 	case "volcengine":
-		p := provider.NewVolcengineProvider(apiKey, plan, "")
+		p := provider.NewVolcengineProvider(apiKey, plan, "", "")
 		_, err := p.GetUsage()
 		return err
 	case "opencode":

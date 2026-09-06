@@ -61,10 +61,25 @@ token-usage account add volcengine --use-local
 ```
 
 Quota windows come from arkcli when the account's key matches a logged-in
-profile (matched by key suffix — `arkcli auth login volc-sso` once per
-account); otherwise the key is probed and windows show `n/a`. You can also
-bind an arkcli profile explicitly with `--profile`, or pick a single
-opencode.json entry with `--opencode-provider <id>`.
+profile (matched by key suffix); otherwise the key is probed and windows
+show `n/a`. You can also bind an arkcli profile explicitly with `--profile`,
+or pick a single opencode.json entry with `--opencode-provider <id>`.
+
+Because arkcli keeps a **single login per HOME**, tracking two Volcano
+accounts with full windows at the same time needs one arkcli HOME each:
+
+```bash
+mkdir -p ~/.config/token-usage/arkcli-homes/coding-plan{,-2}
+HOME=~/.config/token-usage/arkcli-homes/coding-plan   arkcli auth login volc-sso  # phone 1
+HOME=~/.config/token-usage/arkcli-homes/coding-plan-2 arkcli auth login volc-sso  # phone 2
+
+token-usage account add volcengine coding-plan \
+  --plan coding --use-local \
+  --opencode-provider Volcano-Engine-coding-plan \
+  --arkcli-home ~/.config/token-usage/arkcli-homes/coding-plan
+```
+
+Each account then queries through its own login, independently.
 
 ## Installation
 
