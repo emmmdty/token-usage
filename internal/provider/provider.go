@@ -30,7 +30,11 @@ type Usage struct {
 	Monthly  QuotaWindow `json:"monthly"`
 	// Note carries human-readable context when windows cannot be fully
 	// resolved (e.g. "balance: $12.34", "install arkcli for full quota").
-	Note    string      `json:"note,omitempty"`
+	Note string `json:"note,omitempty"`
+	// Account is the real account identity the provider could read at
+	// query time (e.g. arkcli whoami name, key tail from a probe), used
+	// for display; empty when nothing readable is available.
+	Account string      `json:"account,omitempty"`
 	RawData interface{} `json:"rawData,omitempty"`
 }
 

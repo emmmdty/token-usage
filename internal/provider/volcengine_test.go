@@ -143,7 +143,7 @@ func TestVolcengineArkcliProfileFlag(t *testing.T) {
 	dir := t.TempDir()
 	argsFile := filepath.Join(dir, "args.txt")
 	script := `#!/bin/sh
-printf '%s\n' "$@" > "$TU_TEST_ARGS_FILE"
+printf '%s\n' "$@" >> "$TU_TEST_ARGS_FILE"
 echo '{"items":[{"product":"coding-plan","subscribed":true,"periods":[{"label":"session","percent":1}]}]}'
 `
 	bin := filepath.Join(dir, "arkcli")
@@ -160,10 +160,9 @@ echo '{"items":[{"product":"coding-plan","subscribed":true,"periods":[{"label":"
 	if err != nil {
 		t.Fatalf("fake arkcli did not record args: %v", err)
 	}
-	got := strings.Join(strings.Fields(strings.TrimSpace(string(data))), " ")
-	want := "--profile p2 usage plan --format json"
-	if got != want {
-		t.Errorf("arkcli args = %q, want %q", got, want)
+	got := strings.Join(strings.Fields(string(data)), " ")
+	if !strings.Contains(got, "--profile p2 usage plan --format json") {
+		t.Errorf("expected usage plan args with profile, got %q", got)
 	}
 }
 
@@ -282,7 +281,7 @@ func TestVolcengineGetUsage_AutoMatchUsesArkcli(t *testing.T) {
 	dir := t.TempDir()
 	argsFile := filepath.Join(dir, "args.txt")
 	script := `#!/bin/sh
-printf '%s\n' "$@" > "$TU_TEST_ARGS_FILE"
+printf '%s\n' "$@" >> "$TU_TEST_ARGS_FILE"
 echo '{"items":[{"product":"coding-plan","subscribed":true,"periods":[{"label":"session","percent":9}]}]}'
 `
 	bin := filepath.Join(dir, "arkcli")
@@ -306,8 +305,9 @@ echo '{"items":[{"product":"coding-plan","subscribed":true,"periods":[{"label":"
 	if err != nil {
 		t.Fatalf("arkcli was not called: %v", err)
 	}
-	if !strings.Contains(string(data), "--profile") || !strings.Contains(string(data), "p1") {
-		t.Errorf("expected --profile p1 in args, got %q", string(data))
+	got := strings.Join(strings.Fields(string(data)), " ")
+	if !strings.Contains(got, "--profile p1 usage plan") {
+		t.Errorf("expected --profile p1 in args, got %q", got)
 	}
 }
 

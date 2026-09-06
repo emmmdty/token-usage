@@ -12,11 +12,17 @@ import (
 )
 
 type AccountResult struct {
-	Name      string
-	Usage     *models.Usage
-	Error     string
-	Note      string
-	IsCurrent bool
+	Name string
+	// ProviderCode is the short column code ("VE-C", "CL", ...); empty
+	// falls back to Name in the provider column.
+	ProviderCode string
+	// AccountLabel is the plain account name; the account column shows
+	// Usage.Account (provider-readable identity) when available.
+	AccountLabel string
+	Usage        *models.Usage
+	Error        string
+	Note         string
+	IsCurrent    bool
 }
 
 type QuotaStyle struct {
@@ -54,14 +60,17 @@ func FormatQuotaOverview(results []AccountResult, style QuotaStyle, currentAccou
 func formatTable(results []AccountResult, style QuotaStyle, theme Theme, width int) string {
 	var b strings.Builder
 
-	nameWidth := computeNameWidth(results)
+	codeW := computeCodeWidth(results)
+	acctW := computeAccountWidth(results)
 
 	usable := width - 2
 	if usable < 40 {
 		usable = 40
 	}
 
-	fixedTotal := nameWidth + 10
+	// Row anatomy: indent(2) marker(2) code(codeW) gap(2) account(acctW)
+	// gap(2) col gap(2) col gap(2) col.
+	fixedTotal := 2 + 2 + codeW + 2 + acctW + 2 + 2 + 2
 	availCols := usable - fixedTotal
 	if availCols < 0 {
 		availCols = 0
@@ -80,10 +89,13 @@ func formatTable(results []AccountResult, style QuotaStyle, theme Theme, width i
 
 	b.WriteString(theme.Title.Render("  "+i18n.T("tui.title")+"  ") + theme.Muted.Render(i18n.T("tui.refreshed", time.Now().Format("15:04:05"))) + "\n\n")
 
-	// 表头与内容对齐：行前有 2 格的当前账户标记（→ / 空格），表头的
-	// 账户栏也要占同样的宽度，列标签一律左对齐才能与数据列对齐。
+	// 表头与内容对齐：所有列标签与数据列同宽且左对齐；行首标记列
+	// 在表头以等宽空格占位。
 	header := "  " +
-		lipgloss.PlaceHorizontal(nameWidth+2, lipgloss.Left, theme.Header.Render(i18n.T("tui.header.account"))) +
+		theme.Header.Render("  ") +
+		lipgloss.PlaceHorizontal(codeW, lipgloss.Left, theme.Header.Render(i18n.T("tui.header.provider"))) +
+		"  " +
+		lipgloss.PlaceHorizontal(acctW, lipgloss.Left, theme.Header.Render(i18n.T("tui.header.account"))) +
 		"  " +
 		lipgloss.PlaceHorizontal(colWidth, lipgloss.Left, theme.Header.Render(i18n.T("tui.header.5h"))) +
 		"  " +
@@ -92,7 +104,7 @@ func formatTable(results []AccountResult, style QuotaStyle, theme Theme, width i
 		lipgloss.PlaceHorizontal(colWidth, lipgloss.Left, theme.Header.Render(i18n.T("tui.header.monthly"))) +
 		"\n"
 	b.WriteString(header)
-	sepLen := nameWidth + 3*colWidth + 12
+	sepLen := 4 + codeW + 2 + acctW + 2 + 3*colWidth + 4
 	if sepLen > usable {
 		sepLen = usable
 	}
@@ -100,10 +112,15 @@ func formatTable(results []AccountResult, style QuotaStyle, theme Theme, width i
 
 	for _, result := range results {
 		if result.Error != "" {
-			b.WriteString(formatErrorRow(result, nameWidth, theme))
+			b.WriteString(formatErrorRow(result, codeW, acctW, theme))
 		} else {
-			b.WriteString(formatQuotaRow(result, nameWidth, colWidth, barWidth, style, theme))
+			b.WriteString(formatQuotaRow(result, codeW, acctW, colWidth, barWidth, style, theme))
 		}
+	}
+
+	// 图例：提供商代码 -> 完整名称。
+	for _, line := range legendLines(results) {
+		b.WriteString("  " + theme.Muted.Render(line) + "\n")
 	}
 
 	b.WriteString("\n")
@@ -112,7 +129,7 @@ func formatTable(results []AccountResult, style QuotaStyle, theme Theme, width i
 
 	for _, r := range results {
 		if r.IsCurrent {
-			b.WriteString("  " + theme.Muted.Render(i18n.T("tui.active")) + theme.Active.Render(r.Name) + "\n")
+			b.WriteString("  " + theme.Muted.Render(i18n.T("tui.active")) + theme.Active.Render(shortLabel(r)) + "\n")
 			break
 		}
 	}
@@ -133,6 +150,81 @@ func formatTable(results []AccountResult, style QuotaStyle, theme Theme, width i
 		theme.Active.Render("→") + theme.Muted.Render(" "+i18n.T("tui.legend.active")) + "\n")
 
 	return b.String()
+}
+
+// accountCell returns what the account column shows: the real identity the
+// provider could read at query time, else the plain account label, else
+// the full row name.
+func accountCell(r AccountResult) string {
+	if r.Usage != nil && r.Usage.Account != "" {
+		return r.Usage.Account
+	}
+	if r.AccountLabel != "" {
+		return r.AccountLabel
+	}
+	return r.Name
+}
+
+// shortLabel renders "CODE · account" for the summary lines.
+func shortLabel(r AccountResult) string {
+	if r.ProviderCode == "" {
+		return accountCell(r)
+	}
+	return r.ProviderCode + " · " + accountCell(r)
+}
+
+// legendLines maps the codes used in the table back to full provider names
+// ("VE-C = Volcano Engine (Coding Plan)"), skipping codes that are already
+// self-explanatory.
+func legendLines(results []AccountResult) []string {
+	seen := map[string]string{}
+	var order []string
+	for _, r := range results {
+		if r.ProviderCode == "" {
+			continue
+		}
+		base := r.Name
+		if idx := strings.Index(base, " · "); idx >= 0 {
+			base = base[:idx]
+		}
+		if _, ok := seen[r.ProviderCode]; ok {
+			continue
+		}
+		if r.ProviderCode == base {
+			continue
+		}
+		seen[r.ProviderCode] = base
+		order = append(order, r.ProviderCode)
+	}
+	lines := make([]string, 0, len(order))
+	for _, code := range order {
+		lines = append(lines, fmt.Sprintf("%s = %s", code, seen[code]))
+	}
+	return lines
+}
+
+func computeCodeWidth(results []AccountResult) int {
+	w := runewidth.StringWidth(i18n.T("tui.header.provider"))
+	for _, r := range results {
+		code := r.ProviderCode
+		if code == "" {
+			code = r.Name
+		}
+		if cw := runewidth.StringWidth(code); cw > w {
+			w = cw
+		}
+	}
+	return w + 2
+}
+
+func computeAccountWidth(results []AccountResult) int {
+	w := runewidth.StringWidth(i18n.T("tui.header.account"))
+	for _, r := range results {
+		if aw := runewidth.StringWidth(accountCell(r)); aw > w {
+			w = aw
+		}
+	}
+	return w + 2
 }
 
 func formatCompact(results []AccountResult, style QuotaStyle, theme Theme) string {
@@ -203,28 +295,37 @@ func formatPercentCompact(window models.QuotaWindow, style QuotaStyle, theme The
 	}
 }
 
-func formatErrorRow(result AccountResult, nameWidth int, theme Theme) string {
+func formatErrorRow(result AccountResult, codeW, acctW int, theme Theme) string {
 	marker := "  "
 	if result.IsCurrent {
 		marker = theme.Active.Render("→ ")
 	}
-	name := theme.Bold.Render(padRight(result.Name, nameWidth))
+	code := result.ProviderCode
+	if code == "" {
+		code = result.Name
+	}
+	name := theme.Bold.Render(padRight(code, codeW) + "  " + padRight(accountCell(result), acctW))
 	errText := theme.Error.Render("✗ " + truncateError(result.Error, 50))
 	return fmt.Sprintf("  %s%s  %s\n", marker, name, errText)
 }
 
-func formatQuotaRow(result AccountResult, nameWidth, colWidth, barWidth int, style QuotaStyle, theme Theme) string {
+func formatQuotaRow(result AccountResult, codeW, acctW, colWidth, barWidth int, style QuotaStyle, theme Theme) string {
 	marker := "  "
 	if result.IsCurrent {
 		marker = theme.Active.Render("→ ")
 	}
 
-	name := theme.Account.Render(padRight(result.Name, nameWidth))
+	code := result.ProviderCode
+	if code == "" {
+		code = result.Name
+	}
+	codeCol := theme.Account.Render(padRight(code, codeW))
+	acctCol := theme.Bold.Render(padRight(accountCell(result), acctW))
 	rolling := formatQuotaCell(result.Usage.Rolling, barWidth, style, theme)
 	weekly := formatQuotaCell(result.Usage.Weekly, barWidth, style, theme)
 	monthly := formatQuotaCell(result.Usage.Monthly, barWidth, style, theme)
 
-	row := "  " + marker + name + "  " +
+	row := "  " + marker + codeCol + "  " + acctCol + "  " +
 		lipgloss.PlaceHorizontal(colWidth, lipgloss.Left, rolling) +
 		"  " +
 		lipgloss.PlaceHorizontal(colWidth, lipgloss.Left, weekly) +
@@ -325,20 +426,6 @@ func formatResetTime(resetsAt time.Time) string {
 	return fmt.Sprintf("%dm", minutes)
 }
 
-func computeNameWidth(results []AccountResult) int {
-	width := 7
-	for _, r := range results {
-		w := runewidth.StringWidth(r.Name)
-		if r.IsCurrent {
-			w += 2
-		}
-		if w > width {
-			width = w
-		}
-	}
-	return width + 2
-}
-
 func padRight(s string, width int) string {
 	sw := runewidth.StringWidth(s)
 	if sw >= width {
@@ -429,7 +516,7 @@ func findBestAccount(results []AccountResult) string {
 		}
 		if maxPercent < bestPercent {
 			bestPercent = maxPercent
-			bestName = r.Name
+			bestName = shortLabel(r)
 		}
 	}
 	return bestName
@@ -448,7 +535,7 @@ func findNextReset(results []AccountResult) string {
 			}
 			if earliest.IsZero() || resetTime.Before(earliest) {
 				earliest = resetTime
-				name = r.Name
+				name = shortLabel(r)
 			}
 		}
 	}

@@ -19,6 +19,8 @@ type Usage struct {
 	Weekly  QuotaWindow `json:"weekly"`
 	Monthly QuotaWindow `json:"monthly"`
 	Note    string      `json:"note,omitempty"`
+	// Account is the provider-readable account identity (display only).
+	Account string `json:"account,omitempty"`
 }
 
 // Model 表示一个可用模型
@@ -49,6 +51,7 @@ func FromProviderUsage(p *provider.Usage) *Usage {
 			Percent:  p.Monthly.Percent,
 			ResetsAt: p.Monthly.ResetAt,
 		},
-		Note: p.Note,
+		Note:    p.Note,
+		Account: p.Account,
 	}
 }

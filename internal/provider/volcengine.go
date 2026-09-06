@@ -341,7 +341,51 @@ func (p *VolcengineProvider) usageViaArkcli(profile string) (*Usage, error) {
 			usage.Monthly = window
 		}
 	}
+	usage.Account = p.whoami(profile)
 	return usage, nil
+}
+
+type arkcliWhoami struct {
+	AccountID string `json:"account_id"`
+	Name      string `json:"name"`
+}
+
+// whoami resolves the human-readable identity of the login behind the
+// profile ("name" from `arkcli auth whoami`, falling back to the account
+// id). Returns "" on any failure — identity is display sugar only.
+func (p *VolcengineProvider) whoami(profile string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	args := []string{}
+	if profile != "" {
+		args = append(args, "--profile", profile)
+	}
+	args = append(args, "auth", "whoami", "--format", "json")
+	cmd := exec.CommandContext(ctx, p.arkcli, args...)
+	cmd.Env = arkcliEnv(p.arkcliHome)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	var out arkcliWhoami
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		return ""
+	}
+	if out.Name != "" {
+		return out.Name
+	}
+	return out.AccountID
+}
+
+// keyTail renders the distinguishable tail of an API key ("…fa7d").
+func keyTail(apiKey string) string {
+	runes := []rune(apiKey)
+	if len(runes) < 4 {
+		return ""
+	}
+	return "…" + string(runes[len(runes)-4:])
 }
 
 func truncateMsg(s string, n int) string {
@@ -408,6 +452,7 @@ func (p *VolcengineProvider) usageViaProbe() (*Usage, error) {
 			usage.Note = i18n.T("provider.volcengine.note_key_valid")
 		}
 	}
+	usage.Account = keyTail(p.apiKey)
 	return usage, nil
 }
 

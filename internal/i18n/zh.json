@@ -74,6 +74,7 @@
   "framework.help_trail": "使用 \"token-usage [command] --help\" 获取命令更多信息。",
   "tui.title": "Token Usage",
   "tui.refreshed": "刷新于 %s",
+  "tui.header.provider": "提供商",
   "tui.header.account": "账号",
   "tui.header.5h": "5H",
   "tui.header.weekly": "周用量",

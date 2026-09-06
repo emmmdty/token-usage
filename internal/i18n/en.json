@@ -74,6 +74,7 @@
   "framework.help_trail": "Use \"token-usage [command] --help\" for more information about a command.",
   "tui.title": "Token Usage",
   "tui.refreshed": "refreshed %s",
+  "tui.header.provider": "PROVIDER",
   "tui.header.account": "ACCOUNT",
   "tui.header.5h": "5H",
   "tui.header.weekly": "Weekly",

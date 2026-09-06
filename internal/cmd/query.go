@@ -8,6 +8,7 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/emmmdty/token-usage/internal/auth"
 	"github.com/emmmdty/token-usage/internal/config"
@@ -19,12 +20,15 @@ import (
 // queryable unit. It carries display metadata plus a closure that performs
 // the actual quota fetch.
 type queryTarget struct {
-	ProviderID string
-	Account    string
-	Display    string // display name, e.g. "Volcano Engine (Coding Plan)"
-	Name       string // row name: display, plus " · account" when ambiguous
-	IsCurrent  bool
-	query      func() (*provider.Usage, error)
+	ProviderID   string
+	Account      string
+	Display      string // display name, e.g. "Volcano Engine (Coding Plan)"
+	ProviderCode string // short column code, e.g. "VE-C"
+	AccountLabel string // plain account name for the account column
+	Plan         string // volcengine: coding | agent
+	Name         string // row name: display, plus " · account" when ambiguous
+	IsCurrent    bool
+	query        func() (*provider.Usage, error)
 }
 
 // displayName maps a provider id + plan to its human-readable name.
@@ -278,15 +282,93 @@ func buildTargets(cfg *config.Config, providerFilter, accountFilter string) ([]q
 		}
 
 		targets = append(targets, queryTarget{
-			ProviderID: pa.ProviderID,
-			Account:    pa.Account,
-			Display:    display,
-			Name:       name,
-			IsCurrent:  isCurrentAccount(cfg, pa.ProviderID, pa.Account),
-			query:      query,
+			ProviderID:   pa.ProviderID,
+			Account:      pa.Account,
+			Display:      display,
+			AccountLabel: pa.Account,
+			Plan:         pa.Data.Plan,
+			Name:         name,
+			IsCurrent:    isCurrentAccount(cfg, pa.ProviderID, pa.Account),
+			query:        query,
 		})
 	}
+	assignProviderCodes(targets, cfg)
 	return targets, notes, nil
+}
+
+// providerCode renders the short table code for a provider ("VE-C" for the
+// Volcano coding plan, "CL" for Claude, ...). Custom providers get an
+// initials-derived code; collisions are resolved with a numeric suffix.
+func providerCode(providerID, plan string, custom *config.CustomProvider, taken map[string]int) string {
+	code := ""
+	switch providerID {
+	case "volcengine":
+		if plan == provider.PlanAgent {
+			code = "VE-A"
+		} else {
+			code = "VE-C"
+		}
+	case "claude":
+		code = "CL"
+	case "codex":
+		code = "CX"
+	case "opencode":
+		code = "OC"
+	default:
+		name := providerID
+		if custom != nil && custom.DisplayName != "" {
+			name = custom.DisplayName
+		}
+		code = abbreviateProviderName(name)
+	}
+	taken[code]++
+	if n := taken[code]; n > 1 {
+		code = fmt.Sprintf("%s%d", code, n)
+	}
+	return code
+}
+
+// abbreviateProviderName derives an uppercase code (max 4 chars) from a
+// display name: word initials when there are several words, otherwise the
+// leading letters ("Z.ai GLM" -> "ZG", "deepseek" -> "DE").
+func abbreviateProviderName(name string) string {
+	var initials []rune
+	startWord := true
+	for _, r := range name {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			startWord = true
+			continue
+		}
+		if startWord {
+			initials = append(initials, unicode.ToUpper(r))
+			startWord = false
+		}
+	}
+	if len(initials) < 2 {
+		letters := []rune{}
+		for _, r := range name {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) {
+				letters = append(letters, unicode.ToUpper(r))
+			}
+		}
+		initials = letters
+	}
+	if len(initials) > 4 {
+		initials = initials[:4]
+	}
+	return string(initials)
+}
+
+// assignProviderCodes fills the ProviderCode of every target in place.
+func assignProviderCodes(targets []queryTarget, cfg *config.Config) {
+	taken := map[string]int{}
+	for i := range targets {
+		var custom *config.CustomProvider
+		if c, ok := cfg.Custom[targets[i].ProviderID]; ok {
+			custom = &c
+		}
+		targets[i].ProviderCode = providerCode(targets[i].ProviderID, targets[i].Plan, custom, taken)
+	}
 }
 
 // volcenginePlanProfile returns the plan and arkcli profile configured for a
