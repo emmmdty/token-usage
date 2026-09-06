@@ -49,6 +49,20 @@ therefore works in two modes:
 > Note: the ark-cli installer injects skills into local AI agents by default.
 > Set `ARKCLI_SKIP_POSTINSTALL=1` during installation to skip that.
 
+#### Multiple Volcano accounts
+
+Each `arkcli auth login volc-sso` (one per Volcano account, e.g. one per
+phone number) creates its own arkcli profile — check with `arkcli profile
+list`. Register one `token-usage` account per profile and every account
+queries its own plan quota:
+
+```bash
+token-usage account add volcengine phone2 --profile coding-plan_cn-beijing_personal_2
+```
+
+Add `--plan coding|agent` when the profile is an agent plan. Interactive
+`account add` offers profile binding automatically when arkcli is logged in.
+
 ## Installation
 
 ### Go install
@@ -116,6 +130,9 @@ token-usage provider remove my-glm
 # Add an account to a provider (presets detect local logins first)
 token-usage account add claude
 token-usage account add opencode work
+
+# Add a second Volcano account bound to its arkcli login profile
+token-usage account add volcengine phone2 --profile coding-plan_cn-beijing_personal_2
 
 # List accounts grouped by provider (-> marks the current one)
 token-usage account list

@@ -18,9 +18,12 @@ const CurrentVersion = "3"
 //   - "manual": the key lives in the credential store (keyring/encrypted file)
 //   - "local":  the key is read from the tool's own local config at query time
 //     (Claude credentials.json, Codex auth.json, opencode.json, ...)
+//   - "arkcli": the credential is the official ark CLI's own login state,
+//     selected by Account.Profile (volcengine multi-account)
 const (
 	SourceManual = "manual"
 	SourceLocal  = "local"
+	SourceArkcli = "arkcli"
 )
 
 type Config struct {
@@ -62,7 +65,8 @@ type CustomProvider struct {
 type Account struct {
 	Source       string    `yaml:"source"`
 	KeyID        string    `yaml:"key_id,omitempty"`
-	Plan         string    `yaml:"plan,omitempty"` // volcengine: coding | agent
+	Plan         string    `yaml:"plan,omitempty"`    // volcengine: coding | agent
+	Profile      string    `yaml:"profile,omitempty"` // volcengine: arkcli profile (multi-account)
 	CreatedAt    time.Time `yaml:"created_at"`
 	LastVerified time.Time `yaml:"last_verified,omitempty"`
 }

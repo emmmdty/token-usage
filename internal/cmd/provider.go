@@ -171,6 +171,7 @@ var (
 	addAPIKey       string
 	addPlan         string
 	addUseLocal     bool
+	addProfile      string
 )
 
 var providerAddCmd = &cobra.Command{
@@ -232,6 +233,7 @@ Examples:
 				apiKey:   addAPIKey,
 				useLocal: addUseLocal,
 				plan:     addPlan,
+				profile:  addProfile,
 			})
 		case "custom":
 			return addCustomProvider(cfg, cfgPath, reader, addOpts{
@@ -255,6 +257,27 @@ type addOpts struct {
 	plan      string
 	queryType string
 	baseURL   string
+	profile   string // volcengine: arkcli profile (multi-account)
+}
+
+// arkcliProfileOptions renders one picker line per arkcli profile:
+// name (display name) [type], with the default profile marked.
+func arkcliProfileOptions(profiles []provider.ArkcliProfile) []string {
+	opts := make([]string, 0, len(profiles))
+	for _, pr := range profiles {
+		label := pr.Name
+		if pr.DisplayName != "" {
+			label += " (" + pr.DisplayName + ")"
+		}
+		if pr.Type != "" {
+			label += " [" + pr.Type + "]"
+		}
+		if pr.IsDefault {
+			label += i18n.T("output.account.switch.current_marker")
+		}
+		opts = append(opts, label)
+	}
+	return opts
 }
 
 // addPresetProvider walks the interactive flow for a preset provider: reuse
@@ -282,6 +305,27 @@ func addPresetProvider(cfg *config.Config, cfgPath string, reader *bufio.Reader,
 		}
 	}
 
+	// Resolve the arkcli profile for volcengine accounts. Each Volcano
+	// account login is one arkcli profile, so binding one is what makes
+	// multi-account queries land on the right account.
+	profile := opts.profile
+	if providerType == "volcengine" && profile == "" && opts.apiKey == "" && provider.ArkcliAvailable() {
+		profiles, err := provider.ArkcliProfiles()
+		if err == nil && len(profiles) > 0 {
+			yes, err := promptYesNo(reader, "  "+i18n.T("prompt.profile_bind"), true)
+			if err != nil {
+				return err
+			}
+			if yes {
+				idx, err := promptSelect(reader, i18n.T("prompt.profile_select"), arkcliProfileOptions(profiles))
+				if err != nil {
+					return err
+				}
+				profile = profiles[idx].Name
+			}
+		}
+	}
+
 	// Local detection.
 	localDesc := detectLocalAccount(cfg, providerType)
 	useLocal := opts.useLocal
@@ -299,8 +343,10 @@ func addPresetProvider(cfg *config.Config, cfgPath string, reader *bufio.Reader,
 	switch {
 	case useLocal && localDesc != "":
 		// Idempotency: reuse an existing local account for the same plan
-		// instead of piling up duplicates.
-		if plan != "" {
+		// instead of piling up duplicates. An explicit name always creates
+		// (or overwrites) a dedicated account, which is how a second
+		// profile-backed account gets registered.
+		if plan != "" && opts.name == "" {
 			for name, existing := range p.Accounts {
 				if existing.Source == config.SourceLocal && existing.Plan == plan {
 					accountName = name
@@ -316,6 +362,9 @@ func addPresetProvider(cfg *config.Config, cfgPath string, reader *bufio.Reader,
 			}
 			acc = config.Account{Source: config.SourceLocal, Plan: plan, CreatedAt: timeNow()}
 		}
+		if profile != "" {
+			acc.Profile = profile
+		}
 		ensureProviderEnabled(cfg, providerType, true)
 		if providerType == "volcengine" && !provider.ArkcliAvailable() {
 			fmt.Println()
@@ -325,6 +374,32 @@ func addPresetProvider(cfg *config.Config, cfgPath string, reader *bufio.Reader,
 			fmt.Println("  (its installer injects skills into local AI agents; skip with ARKCLI_SKIP_POSTINSTALL=1)")
 			fmt.Println()
 		}
+	case providerType == "volcengine" && profile != "":
+		// Profile-only account: the arkcli login IS the credential, no API
+		// key needed. Validate the profile live so broken bindings never
+		// reach the config.
+		fmt.Println("  " + i18n.T("output.provider.add.validating_profile"))
+		probe := provider.NewVolcengineProvider("", plan, profile)
+		if _, err := probe.GetUsage(); err != nil {
+			return fmt.Errorf("%s", i18n.T("error.account.key_validation_failed", err))
+		}
+
+		accountName = opts.name
+		if accountName == "" {
+			name, err := promptInput(reader, i18n.T("prompt.account_name"))
+			if err != nil {
+				return err
+			}
+			accountName = name
+		}
+		if strings.ContainsAny(accountName, "/\n\x00:") {
+			return errors.New(i18n.T("error.account.name_invalid"))
+		}
+		if _, exists := p.Accounts[accountName]; exists {
+			return fmt.Errorf("%s", i18n.T("error.account.already_exists", accountName, providerType))
+		}
+		acc = config.Account{Source: config.SourceArkcli, Plan: plan, Profile: profile, CreatedAt: timeNow()}
+		ensureProviderEnabled(cfg, providerType, true)
 	default:
 		apiKey := opts.apiKey
 		if apiKey == "" {
@@ -363,6 +438,7 @@ func addPresetProvider(cfg *config.Config, cfgPath string, reader *bufio.Reader,
 			Source:    config.SourceManual,
 			KeyID:     auth.ExtractKeyID(apiKey),
 			Plan:      plan,
+			Profile:   profile,
 			CreatedAt: timeNow(),
 		}
 		ensureProviderEnabled(cfg, providerType, true)
@@ -642,6 +718,7 @@ func init() {
 	providerAddCmd.Flags().StringVar(&addAPIKey, "key", "", "API key (prompts interactively when omitted)")
 	providerAddCmd.Flags().StringVar(&addPlan, "plan", "", "volcengine plan (coding|agent)")
 	providerAddCmd.Flags().BoolVar(&addUseLocal, "use-local", false, "reuse the locally detected account")
+	providerAddCmd.Flags().StringVar(&addProfile, "profile", "", "volcengine arkcli profile (multi-account)")
 
 	providerCmd.AddCommand(providerListCmd)
 	providerCmd.AddCommand(providerAddCmd)

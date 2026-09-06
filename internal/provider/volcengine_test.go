@@ -135,3 +135,75 @@ func TestArkcliOutputParsing(t *testing.T) {
 		t.Error("unsubscribed agent-plan must be skipped")
 	}
 }
+
+func TestVolcengineArkcliProfileFlag(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake arkcli requires a POSIX shell")
+	}
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
+	script := `#!/bin/sh
+printf '%s\n' "$@" > "$TU_TEST_ARGS_FILE"
+echo '{"items":[{"product":"coding-plan","subscribed":true,"periods":[{"label":"session","percent":1}]}]}'
+`
+	bin := filepath.Join(dir, "arkcli")
+	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake arkcli: %v", err)
+	}
+	t.Setenv("TU_TEST_ARGS_FILE", argsFile)
+
+	p := &VolcengineProvider{plan: PlanCoding, arkcli: bin, profile: "p2"}
+	if _, err := p.GetUsage(); err != nil {
+		t.Fatalf("arkcli path failed: %v", err)
+	}
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("fake arkcli did not record args: %v", err)
+	}
+	got := strings.Join(strings.Fields(strings.TrimSpace(string(data))), " ")
+	want := "--profile p2 usage plan --format json"
+	if got != want {
+		t.Errorf("arkcli args = %q, want %q", got, want)
+	}
+}
+
+func TestVolcengineArkcliNoProfileOmitsFlag(t *testing.T) {
+	args := (&VolcengineProvider{plan: PlanCoding}).arkcliArgs()
+	got := strings.Join(args, " ")
+	want := "usage plan --format json"
+	if got != want {
+		t.Errorf("arkcli args = %q, want %q", got, want)
+	}
+}
+
+func TestArkcliProfilesParsing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake arkcli requires a POSIX shell")
+	}
+	script := `#!/bin/sh
+echo '{"default_profile":"p1","profiles":[{"name":"p1","display_name":"Plan A","type":"coding-plan","plan_tier":"pro","region":"cn-beijing","is_default":true},{"name":"p2","type":"platform"}]}'
+`
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "arkcli")
+	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake arkcli: %v", err)
+	}
+
+	profiles, err := arkcliProfiles(bin)
+	if err != nil {
+		t.Fatalf("arkcliProfiles failed: %v", err)
+	}
+	if len(profiles) != 2 {
+		t.Fatalf("expected 2 profiles, got %d", len(profiles))
+	}
+	if profiles[0].Name != "p1" || profiles[0].DisplayName != "Plan A" || !profiles[0].IsDefault {
+		t.Errorf("unexpected first profile: %+v", profiles[0])
+	}
+	if profiles[1].Name != "p2" || profiles[1].IsDefault {
+		t.Errorf("unexpected second profile: %+v", profiles[1])
+	}
+
+	if _, err := arkcliProfiles(""); err == nil {
+		t.Error("expected error when arkcli is missing")
+	}
+}

@@ -121,6 +121,33 @@ func TestFindProvider(t *testing.T) {
 	}
 }
 
+func TestAccountProfilePersistence(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	cfg, err := LoadOrCreateConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to create config: %v", err)
+	}
+
+	volc := cfg.Providers["volcengine"]
+	volc.Enabled = true
+	volc.Accounts["phone2"] = Account{Source: SourceArkcli, Plan: "coding", Profile: "p2"}
+	cfg.Providers["volcengine"] = volc
+	if err := SaveConfig(cfg, configPath); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+
+	loaded, err := LoadOrCreateConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+	got := loaded.Providers["volcengine"].Accounts["phone2"]
+	if got.Source != SourceArkcli || got.Plan != "coding" || got.Profile != "p2" {
+		t.Errorf("account roundtrip mismatch: %+v", got)
+	}
+}
+
 func TestLanguageFieldPersistence(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")

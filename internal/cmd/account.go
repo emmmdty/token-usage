@@ -40,6 +40,7 @@ var (
 	acctKey      string
 	acctUseLocal bool
 	acctPlan     string
+	acctProfile  string
 )
 
 var accountAddCmd = &cobra.Command{
@@ -50,9 +51,13 @@ var accountAddCmd = &cobra.Command{
 Presets (claude, codex, volcengine) detect local logins and offer to reuse
 them without touching those files. With no arguments this is interactive.
 
+For volcengine, each arkcli login profile is one Volcano account; bind a
+profile (or provide its API key) per account to track several plans.
+
 Non-interactive examples:
   token-usage account add opencode work --key sk-...
   token-usage account add volcengine --plan coding --use-local
+  token-usage account add volcengine phone2 --profile coding-plan_cn-beijing_personal_2
   token-usage account add my-glm main --key zai-...   # custom provider`,
 	Args: cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -104,6 +109,7 @@ Non-interactive examples:
 			apiKey:   acctKey,
 			useLocal: acctUseLocal,
 			plan:     acctPlan,
+			profile:  acctProfile,
 		})
 	},
 }
@@ -269,10 +275,14 @@ func renderAccountList(cfg *config.Config, providerFilter string) string {
 			if acc.KeyID != "" {
 				keyID = "  Key: sk-..." + acc.KeyID
 			}
+			profile := ""
+			if acc.Profile != "" {
+				profile = "  Profile: " + acc.Profile
+			}
 			padded := pa.ProviderID + "/" + pa.Account
 			padded += strings.Repeat(" ", nameWidth-runewidth.StringWidth(padded))
-			fmt.Fprintf(&out, "  %s%s  Source: %-5s %s  Status: %-10s  Last verified: %s\n",
-				marker, padded, acc.Source, keyID, status, lastVerified)
+			fmt.Fprintf(&out, "  %s%s  Source: %-5s %s  Status: %-10s  Last verified: %s%s\n",
+				marker, padded, acc.Source, keyID, status, lastVerified, profile)
 		}
 		out.WriteString("\n")
 	}
@@ -812,6 +822,7 @@ func init() {
 	accountAddCmd.Flags().StringVar(&acctKey, "key", "", "API key (prompts interactively when omitted)")
 	accountAddCmd.Flags().BoolVar(&acctUseLocal, "use-local", false, "reuse the locally detected account")
 	accountAddCmd.Flags().StringVar(&acctPlan, "plan", "", "volcengine plan (coding|agent)")
+	accountAddCmd.Flags().StringVar(&acctProfile, "profile", "", "volcengine arkcli profile (multi-account)")
 	accountListCmd.Flags().StringVarP(&acctProvider, "provider", "p", "", "filter by provider")
 
 	accountCmd.AddCommand(accountAddCmd)

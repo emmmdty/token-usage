@@ -84,7 +84,7 @@ func resolveLocalKey(cfg *config.Config, providerID, account string) (func() (*p
 	if credPath == "" {
 		return nil, fmt.Errorf("no credential path for provider '%s'", providerID)
 	}
-	if _, err := os.Stat(credPath); err != nil {
+	if _, err := os.Stat(credPath); err != nil && !(providerID == "volcengine" && preset.Accounts[account].Profile != "") {
 		return nil, fmt.Errorf("local credentials not found at %s", credPath)
 	}
 
@@ -96,16 +96,18 @@ func resolveLocalKey(cfg *config.Config, providerID, account string) (func() (*p
 		p := provider.NewCodexProviderWithEndpoint(credPath, preset.Endpoint)
 		return func() (*provider.Usage, error) { return p.GetUsage() }, nil
 	case "volcengine":
-		apiKey, err := volcengineKeyFromOpencodeJSON(credPath)
-		if err != nil {
-			return nil, err
-		}
 		acc := preset.Accounts[account]
 		plan := acc.Plan
 		if plan == "" {
 			plan = provider.PlanCoding
 		}
-		p := provider.NewVolcengineProvider(apiKey, plan)
+		// The opencode.json key powers the probe fallback; a profile-backed
+		// account works without it as long as arkcli carries the login.
+		apiKey, keyErr := volcengineKeyFromOpencodeJSON(credPath)
+		if keyErr != nil && acc.Profile == "" {
+			return nil, keyErr
+		}
+		p := provider.NewVolcengineProvider(apiKey, plan, acc.Profile)
 		return func() (*provider.Usage, error) { return p.GetUsage() }, nil
 	}
 	return nil, fmt.Errorf("provider '%s' does not support local credentials", providerID)
@@ -198,12 +200,26 @@ func buildTargets(cfg *config.Config, providerFilter, accountFilter string) ([]q
 			switch {
 			case custom != nil:
 				return resolveCustomKey(*custom, pa.ProviderID, pa.Account)
+			case pa.Data.Source == config.SourceArkcli:
+				if pa.ProviderID != "volcengine" {
+					return nil, fmt.Errorf("source 'arkcli' is only supported for the volcengine provider")
+				}
+				// Credential-free: arkcli's login state (selected via the
+				// account's profile) is the credential.
+				plan, profile := volcenginePlanProfile(cfg, pa.Account)
+				p := provider.NewVolcengineProvider("", plan, profile)
+				return func() (*provider.Usage, error) { return p.GetUsage() }, nil
 			case pa.Data.Source == config.SourceLocal:
 				return resolveLocalKey(cfg, pa.ProviderID, pa.Account)
 			default:
 				key, err := resolveStoredKey(pa.ProviderID, pa.Account)
 				if err != nil {
 					return nil, err
+				}
+				if pa.ProviderID == "volcengine" {
+					plan, profile := volcenginePlanProfile(cfg, pa.Account)
+					p := provider.NewVolcengineProvider(key, plan, profile)
+					return func() (*provider.Usage, error) { return p.GetUsage() }, nil
 				}
 				if q, ok := provider.LookupKeyQuery(pa.ProviderID); ok {
 					return func() (*provider.Usage, error) { return q(key, "") }, nil
@@ -228,6 +244,21 @@ func buildTargets(cfg *config.Config, providerFilter, accountFilter string) ([]q
 		})
 	}
 	return targets, notes, nil
+}
+
+// volcenginePlanProfile returns the plan and arkcli profile configured for a
+// volcengine account, defaulting the plan to coding.
+func volcenginePlanProfile(cfg *config.Config, account string) (plan, profile string) {
+	plan = provider.PlanCoding
+	if p, ok := cfg.Providers["volcengine"]; ok {
+		if acc, ok := p.Accounts[account]; ok {
+			if acc.Plan != "" {
+				plan = acc.Plan
+			}
+			profile = acc.Profile
+		}
+	}
+	return plan, profile
 }
 
 // isCurrentAccount reports whether (provider, account) is marked current:
@@ -358,7 +389,7 @@ func filepathDir(path string) string { return filepath.Dir(path) }
 func validateProviderKey(providerType, plan, apiKey string) error {
 	switch providerType {
 	case "volcengine":
-		p := provider.NewVolcengineProvider(apiKey, plan)
+		p := provider.NewVolcengineProvider(apiKey, plan, "")
 		_, err := p.GetUsage()
 		return err
 	case "opencode":

@@ -23,22 +23,26 @@ const volcengineAPIBase = "https://ark.cn-beijing.volces.com"
 // Two resolution paths:
 //  1. arkcli (official CLI) when installed and logged in: `arkcli usage plan
 //     --format json` returns the same windows as the console (session/weekly/
-//     monthly for coding plan, 5h/weekly/monthly for agent plan).
+//     monthly for coding plan, 5h/weekly/monthly for agent plan). A non-empty
+//     profile pins the query to that arkcli login, which is how multiple
+//     Volcano accounts are told apart.
 //  2. API-key probe: a max_tokens=1 chat completion confirms the key works;
 //     rate-limit headers are unreliable on Ark (often absent on 200), so the
 //     usage is reported as unknown with a note pointing at arkcli.
 type VolcengineProvider struct {
 	apiKey    string
 	plan      string // "coding" | "agent"
+	profile   string // arkcli profile name, "" = arkcli default profile
 	arkcli    string // resolved path, "" = not installed
 	probeBase string // override for tests
 }
 
-func NewVolcengineProvider(apiKey, plan string) *VolcengineProvider {
+func NewVolcengineProvider(apiKey, plan, profile string) *VolcengineProvider {
 	return &VolcengineProvider{
-		apiKey: apiKey,
-		plan:   plan,
-		arkcli: lookPathArkcli(),
+		apiKey:  apiKey,
+		plan:    plan,
+		profile: profile,
+		arkcli:  lookPathArkcli(),
 	}
 }
 
@@ -53,6 +57,55 @@ func lookPathArkcli() string {
 // ArkcliAvailable reports whether the official ark CLI was found on PATH.
 func ArkcliAvailable() bool {
 	return lookPathArkcli() != ""
+}
+
+// ArkcliProfile describes one login profile known to the ark CLI. Each
+// Volcano account login lands in its own profile, so listing them is how
+// multi-account setups are discovered.
+type ArkcliProfile struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	Type        string `json:"type"` // coding-plan | agent-plan | platform | ...
+	PlanTier    string `json:"plan_tier"`
+	Region      string `json:"region"`
+	IsDefault   bool   `json:"is_default"`
+}
+
+// ArkcliProfiles lists the ark CLI's login profiles via
+// `arkcli profile list --format json`.
+func ArkcliProfiles() ([]ArkcliProfile, error) {
+	return arkcliProfiles(lookPathArkcli())
+}
+
+func arkcliProfiles(bin string) ([]ArkcliProfile, error) {
+	if bin == "" {
+		return nil, errors.New(i18n.T("provider.volcengine.arkcli_required"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, bin, "profile", "list", "--format", "json")
+	cmd.Env = arkcliEnv()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return nil, fmt.Errorf("%s", i18n.T("provider.volcengine.profile_list_failed", truncateMsg(msg, 200)))
+	}
+
+	var out struct {
+		Profiles []ArkcliProfile `json:"profiles"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		return nil, fmt.Errorf("%s", i18n.T("provider.volcengine.unexpected_output", err))
+	}
+	return out.Profiles, nil
 }
 
 func (p *VolcengineProvider) Name() string {
@@ -135,13 +188,23 @@ func pickArkcliItem(out arkcliOutput, product string) *arkcliItem {
 	return best
 }
 
+// arkcliArgs builds the argument list for a `usage plan` invocation. The
+// profile is a root-level persistent flag, so it goes before the subcommand.
+func (p *VolcengineProvider) arkcliArgs() []string {
+	args := []string{}
+	if p.profile != "" {
+		args = append(args, "--profile", p.profile)
+	}
+	return append(args, "usage", "plan", "--format", "json")
+}
+
 // usageViaArkcli shells out to the official CLI. Read-only query; the local
 // side effects are arkcli's own caches under ~/.arkcli.
 func (p *VolcengineProvider) usageViaArkcli() (*Usage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, p.arkcli, "usage", "plan", "--format", "json")
+	cmd := exec.CommandContext(ctx, p.arkcli, p.arkcliArgs()...)
 	cmd.Env = arkcliEnv()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

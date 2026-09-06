@@ -46,6 +46,19 @@
 > 注意：ark-cli 安装器默认会向本地 AI agent 注入 skills。安装时设置
 > `ARKCLI_SKIP_POSTINSTALL=1` 可跳过该行为。
 
+#### 火山引擎多账号
+
+每个火山账号执行一次 `arkcli auth login volc-sso`（例如每个手机号各登录一次）
+都会生成独立的 arkcli profile——用 `arkcli profile list` 查看。在
+`token-usage` 中为每个 profile 注册一个账户，即可分别查询各账号的计划额度：
+
+```bash
+token-usage account add volcengine phone2 --profile coding-plan_cn-beijing_personal_2
+```
+
+agent 套餐加 `--plan agent`。已登录 arkcli 时，交互式 `account add` 会自动
+提供 profile 绑定选项。
+
 ## 安装
 
 ### Go install
@@ -113,6 +126,9 @@ token-usage provider remove my-glm
 # 给供应商添加账户（预设会先检测本地登录）
 token-usage account add claude
 token-usage account add opencode work
+
+# 添加第二个火山账号，绑定其 arkcli 登录 profile
+token-usage account add volcengine phone2 --profile coding-plan_cn-beijing_personal_2
 
 # 按供应商分组列出账户（-> 标记当前账户）
 token-usage account list

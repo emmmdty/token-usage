@@ -111,6 +111,66 @@ func TestBuildTargetsHonorsFilters(t *testing.T) {
 	}
 }
 
+func TestVolcenginePlanProfile(t *testing.T) {
+	cfg := config.DefaultTestConfig()
+	volc := cfg.Providers["volcengine"]
+	volc.Accounts = map[string]config.Account{
+		"coding-plan": {Source: config.SourceLocal, Plan: "coding"},
+		"phone2":      {Source: config.SourceArkcli, Plan: "agent", Profile: "p2"},
+		"bare":        {Source: config.SourceArkcli},
+	}
+	cfg.Providers["volcengine"] = volc
+
+	plan, profile := volcenginePlanProfile(cfg, "phone2")
+	if plan != "agent" || profile != "p2" {
+		t.Errorf("phone2 = (%q, %q), want (agent, p2)", plan, profile)
+	}
+	plan, profile = volcenginePlanProfile(cfg, "bare")
+	if plan != "coding" || profile != "" {
+		t.Errorf("bare = (%q, %q), want (coding, \"\")", plan, profile)
+	}
+	plan, profile = volcenginePlanProfile(cfg, "missing")
+	if plan != "coding" || profile != "" {
+		t.Errorf("missing = (%q, %q), want (coding, \"\")", plan, profile)
+	}
+}
+
+func TestBuildTargetsVolcengineArkcliSource(t *testing.T) {
+	isolateHome(t)
+	cfg := config.DefaultTestConfig()
+	volc := cfg.Providers["volcengine"]
+	volc.Enabled = true
+	// arkcli-source accounts carry no stored key: the arkcli login state is
+	// the credential, so both targets must build without any notes.
+	volc.Accounts = map[string]config.Account{
+		"phone1": {Source: config.SourceArkcli, Plan: "coding", Profile: "p1"},
+		"phone2": {Source: config.SourceArkcli, Plan: "coding", Profile: "p2"},
+	}
+	cfg.Providers["volcengine"] = volc
+
+	targets, notes, err := buildTargets(cfg, "volcengine", "")
+	if err != nil {
+		t.Fatalf("buildTargets failed: %v", err)
+	}
+	if len(notes) != 0 {
+		t.Errorf("expected no notes for arkcli-source accounts, got %v", notes)
+	}
+	if len(targets) != 2 {
+		t.Fatalf("expected 2 targets, got %d", len(targets))
+	}
+	for _, want := range []string{"phone1", "phone2"} {
+		found := false
+		for _, tg := range targets {
+			if tg.Account == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("missing target for account %q in %+v", want, targets)
+		}
+	}
+}
+
 // isolateHome points the HOME/USERPROFILE env vars at a fresh temp dir so
 // tests never read real user credentials.
 func isolateHome(t *testing.T) {
