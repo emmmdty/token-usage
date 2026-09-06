@@ -48,16 +48,18 @@
 
 #### 火山引擎多账号
 
-每个火山账号执行一次 `arkcli auth login volc-sso`（例如每个手机号各登录一次）
-都会生成独立的 arkcli profile——用 `arkcli profile list` 查看。在
-`token-usage` 中为每个 profile 注册一个账户，即可分别查询各账号的计划额度：
+opencode.json 中每个火山账号一个 provider 条目（例如每个手机号一条）。
+`token-usage` 会读取全部条目，并为每条注册一个独立账户、各自绑定自己的 key：
 
 ```bash
-token-usage account add volcengine phone2 --profile coding-plan_cn-beijing_personal_2
+token-usage account add volcengine --use-local
+# 检测到 2 个火山引擎账号（opencode.json）。全部添加？[Y/n]
 ```
 
-agent 套餐加 `--plan agent`。已登录 arkcli 时，交互式 `account add` 会自动
-提供 profile 绑定选项。
+当账户的 key 与某个已登录的 arkcli profile 匹配（按 key 尾号匹配，每个账号
+执行一次 `arkcli auth login volc-sso`）时，可获取完整配额窗口；否则走 key
+探测，窗口显示 `n/a`。也可以用 `--profile` 显式绑定 profile，或用
+`--opencode-provider <id>` 只添加某一个条目。
 
 ## 安装
 
@@ -127,8 +129,8 @@ token-usage provider remove my-glm
 token-usage account add claude
 token-usage account add opencode work
 
-# 添加第二个火山账号，绑定其 arkcli 登录 profile
-token-usage account add volcengine phone2 --profile coding-plan_cn-beijing_personal_2
+# 为 opencode.json 中检测到的每个火山账号各注册一个账户
+token-usage account add volcengine --use-local
 
 # 按供应商分组列出账户（-> 标记当前账户）
 token-usage account list

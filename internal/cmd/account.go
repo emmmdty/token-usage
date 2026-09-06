@@ -41,6 +41,7 @@ var (
 	acctUseLocal bool
 	acctPlan     string
 	acctProfile  string
+	acctLocalRef string
 )
 
 var accountAddCmd = &cobra.Command{
@@ -110,6 +111,7 @@ Non-interactive examples:
 			useLocal: acctUseLocal,
 			plan:     acctPlan,
 			profile:  acctProfile,
+			localRef: acctLocalRef,
 		})
 	},
 }
@@ -823,6 +825,7 @@ func init() {
 	accountAddCmd.Flags().BoolVar(&acctUseLocal, "use-local", false, "reuse the locally detected account")
 	accountAddCmd.Flags().StringVar(&acctPlan, "plan", "", "volcengine plan (coding|agent)")
 	accountAddCmd.Flags().StringVar(&acctProfile, "profile", "", "volcengine arkcli profile (multi-account)")
+	accountAddCmd.Flags().StringVar(&acctLocalRef, "opencode-provider", "", "volcengine: opencode.json provider entry to read the key from (multi-account)")
 	accountListCmd.Flags().StringVarP(&acctProvider, "provider", "p", "", "filter by provider")
 
 	accountCmd.AddCommand(accountAddCmd)

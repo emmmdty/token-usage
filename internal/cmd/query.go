@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -103,7 +104,7 @@ func resolveLocalKey(cfg *config.Config, providerID, account string) (func() (*p
 		}
 		// The opencode.json key powers the probe fallback; a profile-backed
 		// account works without it as long as arkcli carries the login.
-		apiKey, keyErr := volcengineKeyFromOpencodeJSON(credPath)
+		apiKey, keyErr := volcengineKeyForEntry(credPath, acc.OpencodeProvider)
 		if keyErr != nil && acc.Profile == "" {
 			return nil, keyErr
 		}
@@ -113,12 +114,19 @@ func resolveLocalKey(cfg *config.Config, providerID, account string) (func() (*p
 	return nil, fmt.Errorf("provider '%s' does not support local credentials", providerID)
 }
 
-// volcengineKeyFromOpencodeJSON extracts the coding-plan API key from the
-// user's opencode config so the volcano provider works with zero setup.
-func volcengineKeyFromOpencodeJSON(path string) (string, error) {
+// volcengineOpencodeEntry is one Volcano provider entry in opencode.json.
+type volcengineOpencodeEntry struct {
+	ID  string // opencode.json provider.<id>
+	Key string // provider.<id>.options.apiKey
+}
+
+// volcengineOpencodeEntries parses every Volcano provider entry that
+// carries an API key. opencode.json may hold several accounts at once
+// (e.g. one per phone number); order follows the JSON document.
+func volcengineOpencodeEntries(path string) ([]volcengineOpencodeEntry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("opencode.json not readable (%s): %w", path, err)
+		return nil, fmt.Errorf("opencode.json not readable (%s): %w", path, err)
 	}
 	var doc struct {
 		Provider map[string]struct {
@@ -128,19 +136,52 @@ func volcengineKeyFromOpencodeJSON(path string) (string, error) {
 		} `json:"provider"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {
-		return "", fmt.Errorf("failed to parse %s: %w", path, err)
+		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
+	}
+	var entries []volcengineOpencodeEntry
+	for id, p := range doc.Provider {
+		if p.Options.APIKey != "" {
+			entries = append(entries, volcengineOpencodeEntry{ID: id, Key: p.Options.APIKey})
+		}
+	}
+	// Map order is random in Go; sort by id so detection is deterministic.
+	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
+	return entries, nil
+}
+
+// volcengineKeyForEntry returns the API key of one opencode.json provider
+// entry, falling back to the legacy candidates ("volcengine-coding-plan",
+// "coding-plan", first key) when no explicit binding is set.
+func volcengineKeyForEntry(path, ref string) (string, error) {
+	entries, err := volcengineOpencodeEntries(path)
+	if err != nil {
+		return "", err
+	}
+	if ref != "" {
+		for _, e := range entries {
+			if e.ID == ref {
+				return e.Key, nil
+			}
+		}
+		return "", fmt.Errorf("no provider '%s' in %s", ref, path)
 	}
 	for _, candidate := range []string{"volcengine-coding-plan", "coding-plan"} {
-		if p, ok := doc.Provider[candidate]; ok && p.Options.APIKey != "" {
-			return p.Options.APIKey, nil
+		for _, e := range entries {
+			if e.ID == candidate {
+				return e.Key, nil
+			}
 		}
 	}
-	for _, p := range doc.Provider {
-		if p.Options.APIKey != "" {
-			return p.Options.APIKey, nil
-		}
+	if len(entries) > 0 {
+		return entries[0].Key, nil
 	}
 	return "", fmt.Errorf("no API key found in %s (provider.<id>.options.apiKey)", path)
+}
+
+// volcengineKeyFromOpencodeJSON extracts the coding-plan API key from the
+// user's opencode config so the volcano provider works with zero setup.
+func volcengineKeyFromOpencodeJSON(path string) (string, error) {
+	return volcengineKeyForEntry(path, "")
 }
 
 // resolveCustomKey returns the query closure for a custom provider account.

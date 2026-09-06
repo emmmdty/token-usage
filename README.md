@@ -51,17 +51,20 @@ therefore works in two modes:
 
 #### Multiple Volcano accounts
 
-Each `arkcli auth login volc-sso` (one per Volcano account, e.g. one per
-phone number) creates its own arkcli profile — check with `arkcli profile
-list`. Register one `token-usage` account per profile and every account
-queries its own plan quota:
+`opencode.json` can hold one provider entry per Volcano account (e.g. one
+per phone number). `token-usage` reads them all and registers one account
+per entry, each pinned to its own key:
 
 ```bash
-token-usage account add volcengine phone2 --profile coding-plan_cn-beijing_personal_2
+token-usage account add volcengine --use-local
+# Detected 2 Volcano accounts in opencode.json. Add all of them? [Y/n]
 ```
 
-Add `--plan coding|agent` when the profile is an agent plan. Interactive
-`account add` offers profile binding automatically when arkcli is logged in.
+Quota windows come from arkcli when the account's key matches a logged-in
+profile (matched by key suffix — `arkcli auth login volc-sso` once per
+account); otherwise the key is probed and windows show `n/a`. You can also
+bind an arkcli profile explicitly with `--profile`, or pick a single
+opencode.json entry with `--opencode-provider <id>`.
 
 ## Installation
 
@@ -131,8 +134,8 @@ token-usage provider remove my-glm
 token-usage account add claude
 token-usage account add opencode work
 
-# Add a second Volcano account bound to its arkcli login profile
-token-usage account add volcengine phone2 --profile coding-plan_cn-beijing_personal_2
+# Register one account per Volcano entry found in opencode.json
+token-usage account add volcengine --use-local
 
 # List accounts grouped by provider (-> marks the current one)
 token-usage account list

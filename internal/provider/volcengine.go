@@ -20,19 +20,21 @@ const volcengineAPIBase = "https://ark.cn-beijing.volces.com"
 
 // VolcengineProvider queries Volcano Engine subscription quota.
 //
-// Two resolution paths:
-//  1. arkcli (official CLI) when installed and logged in: `arkcli usage plan
-//     --format json` returns the same windows as the console (session/weekly/
-//     monthly for coding plan, 5h/weekly/monthly for agent plan). A non-empty
-//     profile pins the query to that arkcli login, which is how multiple
-//     Volcano accounts are told apart.
-//  2. API-key probe: a max_tokens=1 chat completion confirms the key works;
-//     rate-limit headers are unreliable on Ark (often absent on 200), so the
-//     usage is reported as unknown with a note pointing at arkcli.
+// Resolution order:
+//  1. arkcli with an explicitly bound profile (Account.Profile) — full
+//     windows for that exact login.
+//  2. arkcli with an auto-matched profile: when the account's API key ends
+//     with the same characters as a logged-in profile's masked key, that
+//     profile provably belongs to the same account, so full windows are
+//     safe. Without a match the key must NOT be queried through arkcli's
+//     login (it could be a different account) and the probe is used.
+//  3. API-key probe: a max_tokens=1 chat completion confirms the key works;
+//     rate-limit headers are unreliable on Ark (often absent on 200), so
+//     the usage is reported as unknown with a note pointing at arkcli.
 type VolcengineProvider struct {
 	apiKey    string
 	plan      string // "coding" | "agent"
-	profile   string // arkcli profile name, "" = arkcli default profile
+	profile   string // arkcli profile name, "" = auto-match or arkcli default
 	arkcli    string // resolved path, "" = not installed
 	probeBase string // override for tests
 }
@@ -63,12 +65,57 @@ func ArkcliAvailable() bool {
 // Volcano account login lands in its own profile, so listing them is how
 // multi-account setups are discovered.
 type ArkcliProfile struct {
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
-	Type        string `json:"type"` // coding-plan | agent-plan | platform | ...
-	PlanTier    string `json:"plan_tier"`
-	Region      string `json:"region"`
-	IsDefault   bool   `json:"is_default"`
+	Name          string `json:"name"`
+	DisplayName   string `json:"display_name"`
+	Type          string `json:"type"` // coding-plan | agent-plan | platform | ...
+	PlanTier      string `json:"plan_tier"`
+	Region        string `json:"region"`
+	IsDefault     bool   `json:"is_default"`
+	DefaultAPIKey string `json:"default_api_key"` // masked, e.g. "ark****fa7d"
+}
+
+// matchProfileForKey resolves the arkcli profile for an API key. Variable
+// so tests can stub it (the real lookup shells out to arkcli).
+var matchProfileForKey = MatchArkcliProfileForKey
+
+// MatchArkcliProfileForKey returns the name of the arkcli profile whose
+// default API key provably belongs to the given key: arkcli masks keys in
+// its profile listing ("ark****fa7d"), so a profile matches when its
+// visible suffix equals the key's tail. Returns "" when nothing matches
+// (or the match is ambiguous and no profile is marked default).
+func MatchArkcliProfileForKey(apiKey string) string {
+	profiles, err := ArkcliProfiles()
+	if err != nil {
+		return ""
+	}
+	return matchProfile(profiles, apiKey)
+}
+
+func matchProfile(profiles []ArkcliProfile, apiKey string) string {
+	fallback := ""
+	for _, pr := range profiles {
+		suffix := maskedKeySuffix(pr.DefaultAPIKey)
+		if suffix == "" || !strings.HasSuffix(apiKey, suffix) {
+			continue
+		}
+		if pr.IsDefault {
+			return pr.Name
+		}
+		if fallback == "" {
+			fallback = pr.Name
+		}
+	}
+	return fallback
+}
+
+// maskedKeySuffix extracts the visible tail of a masked key ("ark****fa7d"
+// -> "fa7d"). Returns "" for values without a mask or without a tail.
+func maskedKeySuffix(masked string) string {
+	idx := strings.LastIndex(masked, "*")
+	if idx < 0 || idx == len(masked)-1 {
+		return ""
+	}
+	return masked[idx+1:]
 }
 
 // ArkcliProfiles lists the ark CLI's login profiles via
@@ -119,15 +166,24 @@ func (p *VolcengineProvider) IsAvailable() bool {
 func (p *VolcengineProvider) GetUsage() (*Usage, error) {
 	var arkErr error
 	if p.arkcli != "" {
-		usage, err := p.usageViaArkcli()
-		if err == nil {
-			return usage, nil
+		profile := p.profile
+		if profile == "" && p.apiKey != "" {
+			// Ride the arkcli login only when the account's key provably
+			// belongs to it; otherwise the probe below reports
+			// identity-correct data instead of another account's quota.
+			profile = matchProfileForKey(p.apiKey)
 		}
-		arkErr = err
-		// Fall through to the probe when a key is available; otherwise
-		// surface the arkcli error (e.g. not logged in).
-		if p.apiKey == "" {
-			return nil, fmt.Errorf("%s", i18n.T("provider.volcengine.arkcli_error", err))
+		if profile != "" || p.apiKey == "" {
+			usage, err := p.usageViaArkcli(profile)
+			if err == nil {
+				return usage, nil
+			}
+			arkErr = err
+			// Fall through to the probe when a key is available; otherwise
+			// surface the arkcli error (e.g. not logged in).
+			if p.apiKey == "" {
+				return nil, fmt.Errorf("%s", i18n.T("provider.volcengine.arkcli_error", err))
+			}
 		}
 	}
 	usage, err := p.usageViaProbe()
@@ -190,21 +246,21 @@ func pickArkcliItem(out arkcliOutput, product string) *arkcliItem {
 
 // arkcliArgs builds the argument list for a `usage plan` invocation. The
 // profile is a root-level persistent flag, so it goes before the subcommand.
-func (p *VolcengineProvider) arkcliArgs() []string {
+func (p *VolcengineProvider) arkcliArgs(profile string) []string {
 	args := []string{}
-	if p.profile != "" {
-		args = append(args, "--profile", p.profile)
+	if profile != "" {
+		args = append(args, "--profile", profile)
 	}
 	return append(args, "usage", "plan", "--format", "json")
 }
 
 // usageViaArkcli shells out to the official CLI. Read-only query; the local
 // side effects are arkcli's own caches under ~/.arkcli.
-func (p *VolcengineProvider) usageViaArkcli() (*Usage, error) {
+func (p *VolcengineProvider) usageViaArkcli(profile string) (*Usage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, p.arkcli, p.arkcliArgs()...)
+	cmd := exec.CommandContext(ctx, p.arkcli, p.arkcliArgs(profile)...)
 	cmd.Env = arkcliEnv()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -178,4 +181,164 @@ func isolateHome(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
+}
+
+func writeVolcengineOpencodeJSON(t *testing.T, entries map[string]string) string {
+	t.Helper()
+	prov := map[string]interface{}{}
+	for id, key := range entries {
+		prov[id] = map[string]interface{}{"options": map[string]string{"apiKey": key}}
+	}
+	data, err := json.Marshal(map[string]interface{}{"provider": prov})
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "opencode.json")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	return path
+}
+
+func TestVolcengineOpencodeEntries(t *testing.T) {
+	path := writeVolcengineOpencodeJSON(t, map[string]string{
+		"Volcano-Engine-coding-plan-2": "ark-key-2",
+		"Volcano-Engine-coding-plan":   "ark-key-1",
+		"openai":                       "", // skipped: no key
+	})
+	entries, err := volcengineOpencodeEntries(path)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d: %+v", len(entries), entries)
+	}
+	// Deterministic order, independent of JSON map order.
+	if entries[0].ID != "Volcano-Engine-coding-plan" || entries[0].Key != "ark-key-1" {
+		t.Errorf("unexpected first entry: %+v", entries[0])
+	}
+	if entries[1].ID != "Volcano-Engine-coding-plan-2" || entries[1].Key != "ark-key-2" {
+		t.Errorf("unexpected second entry: %+v", entries[1])
+	}
+
+	if _, err := volcengineOpencodeEntries(filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Error("expected error for missing file")
+	}
+}
+
+func TestVolcengineKeyForEntry(t *testing.T) {
+	path := writeVolcengineOpencodeJSON(t, map[string]string{
+		"Volcano-Engine-coding-plan":   "ark-key-1",
+		"Volcano-Engine-coding-plan-2": "ark-key-2",
+	})
+
+	// Explicit binding wins.
+	key, err := volcengineKeyForEntry(path, "Volcano-Engine-coding-plan-2")
+	if err != nil || key != "ark-key-2" {
+		t.Errorf("pinned entry = %q err=%v, want ark-key-2", key, err)
+	}
+	// Unknown binding errors instead of silently reading another account.
+	if _, err := volcengineKeyForEntry(path, "nope"); err == nil {
+		t.Error("expected error for unknown entry binding")
+	}
+	// Legacy fallback without binding.
+	key, err = volcengineKeyForEntry(path, "")
+	if err != nil || key != "ark-key-1" {
+		t.Errorf("legacy fallback = %q err=%v, want ark-key-1", key, err)
+	}
+}
+
+func TestDeriveVolcengineAccountName(t *testing.T) {
+	cases := map[string]string{
+		"Volcano-Engine-coding-plan":   "coding-plan",
+		"Volcano-Engine-coding-plan-2": "coding-plan-2",
+		"weird/id:name":                "weird-id-name",
+		"":                             "local",
+	}
+	for id, want := range cases {
+		if got := deriveVolcengineAccountName(id); got != want {
+			t.Errorf("derive(%q) = %q, want %q", id, got, want)
+		}
+	}
+}
+
+func TestAddVolcengineLocalAccounts(t *testing.T) {
+	isolateHome(t)
+	opencodeJSON := writeVolcengineOpencodeJSON(t, map[string]string{
+		"Volcano-Engine-coding-plan":   "ark-key-1",
+		"Volcano-Engine-coding-plan-2": "ark-key-2",
+	})
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	cfg := config.DefaultTestConfig()
+	p := cfg.Providers["volcengine"]
+	p.Enabled = true
+	p.OpencodeJSON = opencodeJSON
+	cfg.Providers["volcengine"] = p
+
+	// Non-interactive "add all": stdin answers 'y' to the add-all prompt.
+	restoreStdin := replaceStdin(t, "y\n")
+	defer restoreStdin()
+	if err := addVolcengineLocalAccounts(cfg, cfgPath, cfg.Providers["volcengine"], "coding", "", addOpts{}); err != nil {
+		t.Fatalf("addVolcengineLocalAccounts failed: %v", err)
+	}
+
+	got := cfg.Providers["volcengine"]
+	if len(got.Accounts) != 2 {
+		t.Fatalf("expected 2 accounts, got %d: %+v", len(got.Accounts), got.Accounts)
+	}
+	a1 := got.Accounts["coding-plan"]
+	a2 := got.Accounts["coding-plan-2"]
+	if a1.OpencodeProvider != "Volcano-Engine-coding-plan" {
+		t.Errorf("coding-plan binding = %q", a1.OpencodeProvider)
+	}
+	if a2.OpencodeProvider != "Volcano-Engine-coding-plan-2" {
+		t.Errorf("coding-plan-2 binding = %q", a2.OpencodeProvider)
+	}
+	if a1.Source != config.SourceLocal || a2.Plan != "coding" {
+		t.Errorf("unexpected accounts: %+v %+v", a1, a2)
+	}
+	if got.DefaultAccount != "coding-plan" {
+		t.Errorf("default account = %q, want coding-plan", got.DefaultAccount)
+	}
+
+	// Re-adding with the same name refreshes the binding in place.
+	if err := addVolcengineLocalAccounts(cfg, cfgPath, got, "coding", "", addOpts{name: "coding-plan-2", localRef: "Volcano-Engine-coding-plan-2"}); err != nil {
+		t.Fatalf("re-add failed: %v", err)
+	}
+	got = cfg.Providers["volcengine"]
+	if len(got.Accounts) != 2 {
+		t.Errorf("expected still 2 accounts, got %d", len(got.Accounts))
+	}
+	if acc := got.Accounts["coding-plan-2"]; acc.OpencodeProvider != "Volcano-Engine-coding-plan-2" || acc.CreatedAt.IsZero() {
+		t.Errorf("coding-plan-2 binding = %q created=%v", acc.OpencodeProvider, acc.CreatedAt)
+	}
+
+	// A second account on an already-bound entry is refused (it would
+	// render identical quota rows).
+	if err := addVolcengineLocalAccounts(cfg, cfgPath, got, "coding", "", addOpts{name: "phone2", localRef: "Volcano-Engine-coding-plan-2"}); err != nil {
+		t.Fatalf("duplicate bind should skip, not fail: %v", err)
+	}
+	if _, ok := cfg.Providers["volcengine"].Accounts["phone2"]; ok {
+		t.Error("entry already bound by coding-plan-2; phone2 must not be created")
+	}
+	if got.Accounts["coding-plan"].OpencodeProvider != "Volcano-Engine-coding-plan" {
+		t.Errorf("coding-plan binding was clobbered: %+v", got.Accounts["coding-plan"])
+	}
+}
+
+// replaceStdin feeds s to os.Stdin for the duration of the test (the add
+// flows read prompts from os.Stdin directly).
+func replaceStdin(t *testing.T, s string) func() {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe failed: %v", err)
+	}
+	if _, err := w.WriteString(s); err != nil {
+		t.Fatalf("stdin write failed: %v", err)
+	}
+	w.Close()
+	old := os.Stdin
+	os.Stdin = r
+	return func() { os.Stdin = old; r.Close() }
 }

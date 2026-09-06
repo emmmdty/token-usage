@@ -172,6 +172,7 @@ var (
 	addPlan         string
 	addUseLocal     bool
 	addProfile      string
+	addLocalRef     string
 )
 
 var providerAddCmd = &cobra.Command{
@@ -234,6 +235,7 @@ Examples:
 				useLocal: addUseLocal,
 				plan:     addPlan,
 				profile:  addProfile,
+				localRef: addLocalRef,
 			})
 		case "custom":
 			return addCustomProvider(cfg, cfgPath, reader, addOpts{
@@ -258,6 +260,7 @@ type addOpts struct {
 	queryType string
 	baseURL   string
 	profile   string // volcengine: arkcli profile (multi-account)
+	localRef  string // volcengine: opencode.json provider entry (multi-account)
 }
 
 // arkcliProfileOptions renders one picker line per arkcli profile:
@@ -305,11 +308,23 @@ func addPresetProvider(cfg *config.Config, cfgPath string, reader *bufio.Reader,
 		}
 	}
 
+	// Local detection.
+	localDesc := detectLocalAccount(cfg, providerType)
+	useLocal := opts.useLocal
+	if localDesc != "" && !useLocal && opts.apiKey == "" {
+		yes, err := promptYesNo(reader, fmt.Sprintf("  Detected local account (%s). Use it?", localDesc), true)
+		if err != nil {
+			return err
+		}
+		useLocal = yes
+	}
+
 	// Resolve the arkcli profile for volcengine accounts. Each Volcano
-	// account login is one arkcli profile, so binding one is what makes
-	// multi-account queries land on the right account.
+	// account login is one arkcli profile. Interactive binding is only
+	// offered when the flow will not take a local account or an API key —
+	// key-backed accounts match their profile by key suffix automatically.
 	profile := opts.profile
-	if providerType == "volcengine" && profile == "" && opts.apiKey == "" && provider.ArkcliAvailable() {
+	if providerType == "volcengine" && profile == "" && opts.apiKey == "" && !useLocal && provider.ArkcliAvailable() {
 		profiles, err := provider.ArkcliProfiles()
 		if err == nil && len(profiles) > 0 {
 			yes, err := promptYesNo(reader, "  "+i18n.T("prompt.profile_bind"), true)
@@ -326,54 +341,22 @@ func addPresetProvider(cfg *config.Config, cfgPath string, reader *bufio.Reader,
 		}
 	}
 
-	// Local detection.
-	localDesc := detectLocalAccount(cfg, providerType)
-	useLocal := opts.useLocal
-	if localDesc != "" && !useLocal && opts.apiKey == "" {
-		yes, err := promptYesNo(reader, fmt.Sprintf("  Detected local account (%s). Use it?", localDesc), true)
-		if err != nil {
-			return err
-		}
-		useLocal = yes
-	}
-
 	var accountName string
 	var acc config.Account
 
 	switch {
 	case useLocal && localDesc != "":
-		// Idempotency: reuse an existing local account for the same plan
-		// instead of piling up duplicates. An explicit name always creates
-		// (or overwrites) a dedicated account, which is how a second
-		// profile-backed account gets registered.
-		if plan != "" && opts.name == "" {
-			for name, existing := range p.Accounts {
-				if existing.Source == config.SourceLocal && existing.Plan == plan {
-					accountName = name
-					acc = existing
-					break
-				}
-			}
+		if providerType == "volcengine" {
+			// opencode.json can carry several Volcano accounts; register
+			// one local account per entry, pinned to its provider id.
+			return addVolcengineLocalAccounts(cfg, cfgPath, p, plan, profile, opts)
 		}
+		accountName = opts.name
 		if accountName == "" {
-			accountName = opts.name
-			if accountName == "" {
-				accountName = "local"
-			}
-			acc = config.Account{Source: config.SourceLocal, Plan: plan, CreatedAt: timeNow()}
+			accountName = "local"
 		}
-		if profile != "" {
-			acc.Profile = profile
-		}
+		acc = config.Account{Source: config.SourceLocal, Plan: plan, CreatedAt: timeNow()}
 		ensureProviderEnabled(cfg, providerType, true)
-		if providerType == "volcengine" && !provider.ArkcliAvailable() {
-			fmt.Println()
-			fmt.Println("  NOTE: arkcli is not installed. The key will be probed for validity,")
-			fmt.Println("  but full quota windows need the official CLI:")
-			fmt.Println("    npm i -g @volcengine/ark-cli && arkcli auth login")
-			fmt.Println("  (its installer injects skills into local AI agents; skip with ARKCLI_SKIP_POSTINSTALL=1)")
-			fmt.Println()
-		}
 	case providerType == "volcengine" && profile != "":
 		// Profile-only account: the arkcli login IS the credential, no API
 		// key needed. Validate the profile live so broken bindings never
@@ -468,6 +451,154 @@ func addPresetProvider(cfg *config.Config, cfgPath string, reader *bufio.Reader,
 	fmt.Printf("%s", i18n.T("output.provider.add.preset_added", providerType, accountName, acc.Source))
 	fmt.Println("  " + i18n.T("output.provider.add.run_quota"))
 	return nil
+}
+
+// addVolcengineLocalAccounts registers local-source accounts for the
+// Volcano entries found in opencode.json. Several entries (one per Volcano
+// account, e.g. one per phone) become one account each, pinned to its
+// opencode.json provider id via Account.OpencodeProvider.
+func addVolcengineLocalAccounts(cfg *config.Config, cfgPath string, p config.PresetProvider, plan, profile string, opts addOpts) error {
+	home, _ := os.UserHomeDir()
+	credPath := p.CredentialPath("volcengine", home)
+	entries, err := volcengineOpencodeEntries(credPath)
+	if err != nil || len(entries) == 0 {
+		return fmt.Errorf("%s", i18n.T("error.volcengine.no_entries", credPath))
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	if opts.name != "" || opts.localRef != "" {
+		chosen, err := pickVolcengineEntry(entries, opts, reader)
+		if err != nil {
+			return err
+		}
+		entries = []volcengineOpencodeEntry{chosen}
+	} else if len(entries) > 1 {
+		yes, err := promptYesNo(reader, "  "+i18n.T("prompt.volcengine.add_all", len(entries)), true)
+		if err != nil {
+			return err
+		}
+		if !yes {
+			ids := make([]string, 0, len(entries))
+			for _, e := range entries {
+				ids = append(ids, e.ID)
+			}
+			idx, err := promptSelect(reader, i18n.T("prompt.volcengine.pick_entry"), ids)
+			if err != nil {
+				return err
+			}
+			entries = []volcengineOpencodeEntry{entries[idx]}
+		}
+	}
+
+	if p.Accounts == nil {
+		p.Accounts = map[string]config.Account{}
+	}
+	firstAdded := ""
+	for _, e := range entries {
+		name := opts.name
+		if name == "" || len(entries) > 1 {
+			name = deriveVolcengineAccountName(e.ID)
+		}
+		// Never double-bind one entry: two accounts on the same key would
+		// render identical quota rows. Rebind by removing the old account
+		// first.
+		if owner := volcengineEntryOwner(p.Accounts, e.ID); owner != "" && owner != name {
+			fmt.Printf("  %s\n", i18n.T("output.volcengine.entry_skipped", e.ID, owner))
+			continue
+		}
+		acc := config.Account{
+			Source:           config.SourceLocal,
+			Plan:             plan,
+			Profile:          profile,
+			OpencodeProvider: e.ID,
+			CreatedAt:        timeNow(),
+		}
+		// Re-adding refreshes the binding in place instead of piling up
+		// duplicates; a name owned by a non-local account is rejected.
+		if existing, ok := p.Accounts[name]; ok {
+			if existing.Source != config.SourceLocal {
+				return fmt.Errorf("%s", i18n.T("error.account.already_exists", name, "volcengine"))
+			}
+			acc.CreatedAt = existing.CreatedAt
+			acc.LastVerified = existing.LastVerified
+		}
+		p.Accounts[name] = acc
+		if firstAdded == "" {
+			firstAdded = name
+		}
+		fmt.Printf("%s", i18n.T("output.volcengine.entry_added", name, e.ID))
+	}
+
+	p.Enabled = true
+	if p.DefaultAccount == "" {
+		p.DefaultAccount = firstAdded
+	}
+	cfg.Providers["volcengine"] = p
+	if err := config.SaveConfig(cfg, cfgPath); err != nil {
+		return err
+	}
+
+	if !provider.ArkcliAvailable() {
+		fmt.Println()
+		fmt.Println("  NOTE: arkcli is not installed. Keys will be probed for validity,")
+		fmt.Println("  but full quota windows need the official CLI:")
+		fmt.Println("    npm i -g @volcengine/ark-cli && arkcli auth login")
+		fmt.Println("  (its installer injects skills into local AI agents; skip with ARKCLI_SKIP_POSTINSTALL=1)")
+		fmt.Println()
+	}
+	fmt.Println("  " + i18n.T("output.provider.add.run_quota"))
+	return nil
+}
+
+// volcengineEntryOwner returns the name of the local account already bound
+// to the opencode.json entry, or "".
+func volcengineEntryOwner(accounts map[string]config.Account, entryID string) string {
+	for name, a := range accounts {
+		if a.Source == config.SourceLocal && a.OpencodeProvider == entryID {
+			return name
+		}
+	}
+	return ""
+}
+
+// pickVolcengineEntry narrows the opencode.json entries to the one an
+// explicit --name / --opencode-provider refers to.
+func pickVolcengineEntry(entries []volcengineOpencodeEntry, opts addOpts, reader *bufio.Reader) (volcengineOpencodeEntry, error) {
+	ids := make([]string, 0, len(entries))
+	for _, e := range entries {
+		ids = append(ids, e.ID)
+	}
+	list := strings.Join(ids, ", ")
+
+	if opts.localRef != "" {
+		for _, e := range entries {
+			if e.ID == opts.localRef {
+				return e, nil
+			}
+		}
+		return volcengineOpencodeEntry{}, fmt.Errorf("%s", i18n.T("error.volcengine.entry_not_found", opts.localRef, list))
+	}
+	for _, e := range entries {
+		if deriveVolcengineAccountName(e.ID) == opts.name {
+			return e, nil
+		}
+	}
+	if len(entries) == 1 {
+		return entries[0], nil
+	}
+	return volcengineOpencodeEntry{}, fmt.Errorf("%s", i18n.T("error.volcengine.name_unmappable", opts.name, list))
+}
+
+// deriveVolcengineAccountName maps an opencode.json provider id to an
+// account name ("Volcano-Engine-coding-plan-2" -> "coding-plan-2").
+func deriveVolcengineAccountName(opencodeID string) string {
+	n := strings.ToLower(opencodeID)
+	n = strings.TrimPrefix(n, "volcano-engine-")
+	n = strings.NewReplacer("/", "-", ":", "-", "\n", "").Replace(n)
+	if n == "" {
+		n = "local"
+	}
+	return n
 }
 
 // addCustomProvider collects name/type/base URL/key, validates the quota
@@ -596,8 +727,8 @@ func detectLocalAccount(cfg *config.Config, providerType string) string {
 	case "volcengine":
 		p := cfg.Providers["volcengine"]
 		path := p.CredentialPath(providerType, home)
-		if key, err := volcengineKeyFromOpencodeJSON(path); err == nil && key != "" {
-			return "API key in " + path
+		if entries, err := volcengineOpencodeEntries(path); err == nil && len(entries) > 0 {
+			return fmt.Sprintf("%d API key(s) in %s", len(entries), path)
 		}
 	}
 	return ""
@@ -719,6 +850,7 @@ func init() {
 	providerAddCmd.Flags().StringVar(&addPlan, "plan", "", "volcengine plan (coding|agent)")
 	providerAddCmd.Flags().BoolVar(&addUseLocal, "use-local", false, "reuse the locally detected account")
 	providerAddCmd.Flags().StringVar(&addProfile, "profile", "", "volcengine arkcli profile (multi-account)")
+	providerAddCmd.Flags().StringVar(&addLocalRef, "opencode-provider", "", "volcengine: opencode.json provider entry to read the key from (multi-account)")
 
 	providerCmd.AddCommand(providerListCmd)
 	providerCmd.AddCommand(providerAddCmd)

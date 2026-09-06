@@ -80,18 +80,19 @@ func formatTable(results []AccountResult, style QuotaStyle, theme Theme, width i
 
 	b.WriteString(theme.Title.Render("  "+i18n.T("tui.title")+"  ") + theme.Muted.Render(i18n.T("tui.refreshed", time.Now().Format("15:04:05"))) + "\n\n")
 
-	// 表头与内容对齐
+	// 表头与内容对齐：行前有 2 格的当前账户标记（→ / 空格），表头的
+	// 账户栏也要占同样的宽度，列标签一律左对齐才能与数据列对齐。
 	header := "  " +
-		lipgloss.PlaceHorizontal(nameWidth, lipgloss.Left, theme.Header.Render(i18n.T("tui.header.account"))) +
+		lipgloss.PlaceHorizontal(nameWidth+2, lipgloss.Left, theme.Header.Render(i18n.T("tui.header.account"))) +
 		"  " +
-		lipgloss.PlaceHorizontal(colWidth, lipgloss.Center, theme.Header.Render(i18n.T("tui.header.5h"))) +
+		lipgloss.PlaceHorizontal(colWidth, lipgloss.Left, theme.Header.Render(i18n.T("tui.header.5h"))) +
 		"  " +
-		lipgloss.PlaceHorizontal(colWidth, lipgloss.Center, theme.Header.Render(i18n.T("tui.header.weekly"))) +
+		lipgloss.PlaceHorizontal(colWidth, lipgloss.Left, theme.Header.Render(i18n.T("tui.header.weekly"))) +
 		"  " +
-		lipgloss.PlaceHorizontal(colWidth, lipgloss.Center, theme.Header.Render(i18n.T("tui.header.monthly"))) +
+		lipgloss.PlaceHorizontal(colWidth, lipgloss.Left, theme.Header.Render(i18n.T("tui.header.monthly"))) +
 		"\n"
 	b.WriteString(header)
-	sepLen := nameWidth + 3*colWidth + 10
+	sepLen := nameWidth + 3*colWidth + 12
 	if sepLen > usable {
 		sepLen = usable
 	}

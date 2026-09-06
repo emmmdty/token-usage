@@ -63,12 +63,15 @@ type CustomProvider struct {
 }
 
 type Account struct {
-	Source       string    `yaml:"source"`
-	KeyID        string    `yaml:"key_id,omitempty"`
-	Plan         string    `yaml:"plan,omitempty"`    // volcengine: coding | agent
-	Profile      string    `yaml:"profile,omitempty"` // volcengine: arkcli profile (multi-account)
-	CreatedAt    time.Time `yaml:"created_at"`
-	LastVerified time.Time `yaml:"last_verified,omitempty"`
+	Source  string `yaml:"source"`
+	KeyID   string `yaml:"key_id,omitempty"`
+	Plan    string `yaml:"plan,omitempty"`    // volcengine: coding | agent
+	Profile string `yaml:"profile,omitempty"` // volcengine: arkcli profile (multi-account)
+	// OpencodeProvider pins which provider.<id> entry of opencode.json a
+	// volcengine "local" account reads its key from (multi-account).
+	OpencodeProvider string    `yaml:"opencode_provider,omitempty"`
+	CreatedAt        time.Time `yaml:"created_at"`
+	LastVerified     time.Time `yaml:"last_verified,omitempty"`
 }
 
 // CredentialPath returns the local credential file for "local" source

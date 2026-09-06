@@ -168,7 +168,7 @@ echo '{"items":[{"product":"coding-plan","subscribed":true,"periods":[{"label":"
 }
 
 func TestVolcengineArkcliNoProfileOmitsFlag(t *testing.T) {
-	args := (&VolcengineProvider{plan: PlanCoding}).arkcliArgs()
+	args := (&VolcengineProvider{plan: PlanCoding}).arkcliArgs("")
 	got := strings.Join(args, " ")
 	want := "usage plan --format json"
 	if got != want {
@@ -181,7 +181,7 @@ func TestArkcliProfilesParsing(t *testing.T) {
 		t.Skip("fake arkcli requires a POSIX shell")
 	}
 	script := `#!/bin/sh
-echo '{"default_profile":"p1","profiles":[{"name":"p1","display_name":"Plan A","type":"coding-plan","plan_tier":"pro","region":"cn-beijing","is_default":true},{"name":"p2","type":"platform"}]}'
+echo '{"default_profile":"p1","profiles":[{"name":"p1","display_name":"Plan A","type":"coding-plan","plan_tier":"pro","region":"cn-beijing","is_default":true,"default_api_key":"ark****fa7d"},{"name":"p2","type":"platform","default_api_key":"ark****1d5"}]}'
 `
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "arkcli")
@@ -205,5 +205,101 @@ echo '{"default_profile":"p1","profiles":[{"name":"p1","display_name":"Plan A","
 
 	if _, err := arkcliProfiles(""); err == nil {
 		t.Error("expected error when arkcli is missing")
+	}
+}
+
+func TestMaskedKeySuffix(t *testing.T) {
+	cases := []struct {
+		masked, want string
+	}{
+		{"ark****fa7d", "fa7d"},
+		{"ark-****f1d5-6", "f1d5-6"},
+		{"nomask", ""},
+		{"trail*", ""},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := maskedKeySuffix(c.masked); got != c.want {
+			t.Errorf("maskedKeySuffix(%q) = %q, want %q", c.masked, got, c.want)
+		}
+	}
+}
+
+func TestMatchProfile(t *testing.T) {
+	profiles := []ArkcliProfile{
+		{Name: "p1", IsDefault: true, DefaultAPIKey: "ark****fa7d"},
+		{Name: "p2", DefaultAPIKey: "ark****1d5"},
+		{Name: "p3"}, // no key listed: never matches
+	}
+	if got := matchProfile(profiles, "ark-36a9-75db-4016-936d-514dd57eb4d5-6fa7d"); got != "p1" {
+		t.Errorf("matching key = %q, want p1", got)
+	}
+	if got := matchProfile(profiles, "ark-d743-xxxxxx-f1d5"); got != "p2" {
+		t.Errorf("second key = %q, want p2", got)
+	}
+	if got := matchProfile(profiles, "ark-0000-zzzzzz-0000"); got != "" {
+		t.Errorf("unmatched key = %q, want empty", got)
+	}
+}
+
+func TestVolcengineGetUsage_AutoMatchUsesArkcli(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake arkcli requires a POSIX shell")
+	}
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
+	script := `#!/bin/sh
+printf '%s\n' "$@" > "$TU_TEST_ARGS_FILE"
+echo '{"items":[{"product":"coding-plan","subscribed":true,"periods":[{"label":"session","percent":9}]}]}'
+`
+	bin := filepath.Join(dir, "arkcli")
+	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake arkcli: %v", err)
+	}
+	t.Setenv("TU_TEST_ARGS_FILE", argsFile)
+	old := matchProfileForKey
+	matchProfileForKey = func(string) string { return "p1" }
+	defer func() { matchProfileForKey = old }()
+
+	p := &VolcengineProvider{apiKey: "ark-k", plan: PlanCoding, arkcli: bin}
+	usage, err := p.GetUsage()
+	if err != nil {
+		t.Fatalf("GetUsage failed: %v", err)
+	}
+	if usage.Rolling.Percent != 9 {
+		t.Errorf("expected arkcli-provided windows, got %+v", usage)
+	}
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("arkcli was not called: %v", err)
+	}
+	if !strings.Contains(string(data), "--profile") || !strings.Contains(string(data), "p1") {
+		t.Errorf("expected --profile p1 in args, got %q", string(data))
+	}
+}
+
+func TestVolcengineGetUsage_NoMatchFallsBackToProbe(t *testing.T) {
+	probeHit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probeHit = true
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
+	}))
+	defer server.Close()
+
+	old := matchProfileForKey
+	matchProfileForKey = func(string) string { return "" } // key belongs to no logged-in profile
+	defer func() { matchProfileForKey = old }()
+
+	p := &VolcengineProvider{apiKey: "ark-other-account", plan: PlanCoding, arkcli: "/nonexistent/arkcli", probeBase: server.URL}
+	usage, err := p.GetUsage()
+	if err != nil {
+		t.Fatalf("probe path failed: %v", err)
+	}
+	if !probeHit {
+		t.Error("expected the probe endpoint to be called when no profile matches")
+	}
+	if usage.Rolling.Status != StatusUnknown {
+		t.Errorf("expected unknown windows from probe, got %+v", usage.Rolling)
 	}
 }
