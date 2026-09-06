@@ -17,14 +17,15 @@ import (
 )
 
 type accountResult struct {
-	Provider     string        `json:"provider"`
-	ProviderCode string        `json:"provider_code,omitempty"`
-	Account      string        `json:"account"`
-	Name         string        `json:"name"`
-	PlanType     string        `json:"plan_type,omitempty"`
-	Usage        *models.Usage `json:"quota,omitempty"`
-	Error        string        `json:"error,omitempty"`
-	IsCurrent    bool          `json:"is_current,omitempty"`
+	Provider        string        `json:"provider"`
+	ProviderCode    string        `json:"provider_code,omitempty"`
+	ProviderDisplay string        `json:"provider_display,omitempty"`
+	Account         string        `json:"account"`
+	Name            string        `json:"name"`
+	PlanType        string        `json:"plan_type,omitempty"`
+	Usage           *models.Usage `json:"quota,omitempty"`
+	Error           string        `json:"error,omitempty"`
+	IsCurrent       bool          `json:"is_current,omitempty"`
 }
 
 type quotaResponse struct {
@@ -91,11 +92,12 @@ func fetchAndRender(cfg *config.Config, providerFilter, accountFilter string, js
 	out := make([]accountResult, 0, len(results))
 	for _, r := range results {
 		ar := accountResult{
-			Provider:     r.Target.ProviderID,
-			ProviderCode: r.Target.ProviderCode,
-			Account:      r.Target.Account,
-			Name:         r.Target.Name,
-			IsCurrent:    r.Target.IsCurrent,
+			Provider:        r.Target.ProviderID,
+			ProviderCode:    r.Target.ProviderCode,
+			ProviderDisplay: r.Target.Display,
+			Account:         r.Target.Account,
+			Name:            r.Target.Name,
+			IsCurrent:       r.Target.IsCurrent,
 		}
 		if r.Err != nil {
 			ar.Error = r.Err.Error()
@@ -174,13 +176,14 @@ func printQuotaTable(results []accountResult, cfg *config.Config) error {
 			note = r.Usage.Note
 		}
 		tuiResults[i] = tui.AccountResult{
-			Name:         r.Name,
-			ProviderCode: r.ProviderCode,
-			AccountLabel: r.Account,
-			Usage:        r.Usage,
-			Error:        r.Error,
-			Note:         note,
-			IsCurrent:    r.IsCurrent,
+			Name:            r.Name,
+			ProviderCode:    r.ProviderCode,
+			ProviderDisplay: r.ProviderDisplay,
+			AccountLabel:    r.Account,
+			Usage:           r.Usage,
+			Error:           r.Error,
+			Note:            note,
+			IsCurrent:       r.IsCurrent,
 		}
 	}
 

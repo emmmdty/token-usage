@@ -14,6 +14,7 @@ import (
 	"github.com/emmmdty/token-usage/internal/config"
 	"github.com/emmmdty/token-usage/internal/i18n"
 	"github.com/emmmdty/token-usage/internal/provider"
+	"github.com/mattn/go-runewidth"
 )
 
 // queryTarget is one concrete (provider, account) pair resolved to a
@@ -296,11 +297,13 @@ func buildTargets(cfg *config.Config, providerFilter, accountFilter string) ([]q
 	return targets, notes, nil
 }
 
-// providerCode renders the short table code for a provider ("VE-C" for the
-// Volcano coding plan, "CL" for Claude, ...). Custom providers get an
-// initials-derived code; collisions are resolved with a numeric suffix.
+// providerCode renders the short table code for providers whose display
+// name is too long for the table ("VE-C" for the Volcano coding plan).
+// Short names (Claude, Codex, OpenCode Go, short custom names) return ""
+// and are shown as-is; long custom names get an initials-derived code.
+// Collisions are resolved with a numeric suffix.
 func providerCode(providerID, plan string, custom *config.CustomProvider, taken map[string]int) string {
-	code := ""
+	var code string
 	switch providerID {
 	case "volcengine":
 		if plan == provider.PlanAgent {
@@ -308,16 +311,15 @@ func providerCode(providerID, plan string, custom *config.CustomProvider, taken 
 		} else {
 			code = "VE-C"
 		}
-	case "claude":
-		code = "CL"
-	case "codex":
-		code = "CX"
-	case "opencode":
-		code = "OC"
+	case "claude", "codex", "opencode":
+		return ""
 	default:
 		name := providerID
 		if custom != nil && custom.DisplayName != "" {
 			name = custom.DisplayName
+		}
+		if runewidth.StringWidth(name) <= 10 {
+			return ""
 		}
 		code = abbreviateProviderName(name)
 	}

@@ -13,9 +13,12 @@ import (
 
 type AccountResult struct {
 	Name string
-	// ProviderCode is the short column code ("VE-C", "CL", ...); empty
-	// falls back to Name in the provider column.
+	// ProviderCode is the short column code for long provider names
+	// ("VE-C"); empty means the display name is short enough to show
+	// directly (ProviderDisplay).
 	ProviderCode string
+	// ProviderDisplay is the full provider name ("Claude", "OpenCode Go").
+	ProviderDisplay string
 	// AccountLabel is the plain account name; the account column shows
 	// Usage.Account (provider-readable identity) when available.
 	AccountLabel string
@@ -23,6 +26,18 @@ type AccountResult struct {
 	Error        string
 	Note         string
 	IsCurrent    bool
+}
+
+// providerCell returns what the provider column shows: the code when the
+// display name needed abbreviating, else the display name itself.
+func providerCell(r AccountResult) string {
+	if r.ProviderCode != "" {
+		return r.ProviderCode
+	}
+	if r.ProviderDisplay != "" {
+		return r.ProviderDisplay
+	}
+	return r.Name
 }
 
 type QuotaStyle struct {
@@ -165,40 +180,47 @@ func accountCell(r AccountResult) string {
 	return r.Name
 }
 
-// shortLabel renders "CODE · account" for the summary lines.
+// shortLabel renders "provider · account" for the summary lines, collapsing
+// to one part when both are the same.
 func shortLabel(r AccountResult) string {
-	if r.ProviderCode == "" {
-		return accountCell(r)
+	p, a := providerCell(r), accountCell(r)
+	if p == a {
+		return p
 	}
-	return r.ProviderCode + " · " + accountCell(r)
+	return p + " · " + a
 }
 
 // legendLines maps the codes used in the table back to full provider names
-// ("VE-C = Volcano Engine (Coding Plan)"), skipping codes that are already
-// self-explanatory.
+// ("VE-C / VE-C2 = Volcano Engine (Coding Plan)"). Providers shown under
+// their own (short) name get no legend entry.
 func legendLines(results []AccountResult) []string {
-	seen := map[string]string{}
+	codesByBase := map[string][]string{}
 	var order []string
 	for _, r := range results {
 		if r.ProviderCode == "" {
 			continue
 		}
-		base := r.Name
-		if idx := strings.Index(base, " · "); idx >= 0 {
-			base = base[:idx]
-		}
-		if _, ok := seen[r.ProviderCode]; ok {
-			continue
+		base := r.ProviderDisplay
+		if base == "" {
+			base = r.Name
+			if idx := strings.Index(base, " · "); idx >= 0 {
+				base = base[:idx]
+			}
 		}
 		if r.ProviderCode == base {
 			continue
 		}
-		seen[r.ProviderCode] = base
-		order = append(order, r.ProviderCode)
+		if _, ok := codesByBase[base]; !ok {
+			order = append(order, base)
+		}
+		codes := codesByBase[base]
+		if len(codes) == 0 || codes[len(codes)-1] != r.ProviderCode {
+			codesByBase[base] = append(codes, r.ProviderCode)
+		}
 	}
 	lines := make([]string, 0, len(order))
-	for _, code := range order {
-		lines = append(lines, fmt.Sprintf("%s = %s", code, seen[code]))
+	for _, base := range order {
+		lines = append(lines, fmt.Sprintf("%s = %s", strings.Join(codesByBase[base], " / "), base))
 	}
 	return lines
 }
@@ -206,11 +228,7 @@ func legendLines(results []AccountResult) []string {
 func computeCodeWidth(results []AccountResult) int {
 	w := 0
 	for _, r := range results {
-		code := r.ProviderCode
-		if code == "" {
-			code = r.Name
-		}
-		if cw := runewidth.StringWidth(code); cw > w {
+		if cw := runewidth.StringWidth(providerCell(r)); cw > w {
 			w = cw
 		}
 	}
@@ -300,10 +318,7 @@ func formatErrorRow(result AccountResult, codeW, acctW int, theme Theme) string 
 	if result.IsCurrent {
 		marker = theme.Active.Render("→ ")
 	}
-	code := result.ProviderCode
-	if code == "" {
-		code = result.Name
-	}
+	code := providerCell(result)
 	name := theme.Bold.Render(padRight(code, codeW) + "  " + padRight(accountCell(result), acctW))
 	errText := theme.Error.Render("✗ " + truncateError(result.Error, 50))
 	return fmt.Sprintf("  %s%s  %s\n", marker, name, errText)
@@ -315,11 +330,7 @@ func formatQuotaRow(result AccountResult, codeW, acctW, colWidth, barWidth int, 
 		marker = theme.Active.Render("→ ")
 	}
 
-	code := result.ProviderCode
-	if code == "" {
-		code = result.Name
-	}
-	codeCol := theme.Account.Render(padRight(code, codeW))
+	codeCol := theme.Account.Render(padRight(providerCell(result), codeW))
 	acctCol := theme.Bold.Render(padRight(accountCell(result), acctW))
 	rolling := formatQuotaCell(result.Usage.Rolling, barWidth, style, theme)
 	weekly := formatQuotaCell(result.Usage.Weekly, barWidth, style, theme)
