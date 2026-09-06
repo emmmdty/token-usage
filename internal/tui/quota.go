@@ -89,11 +89,11 @@ func formatTable(results []AccountResult, style QuotaStyle, theme Theme, width i
 
 	b.WriteString(theme.Title.Render("  "+i18n.T("tui.title")+"  ") + theme.Muted.Render(i18n.T("tui.refreshed", time.Now().Format("15:04:05"))) + "\n\n")
 
-	// 表头与内容对齐：所有列标签与数据列同宽且左对齐；行首标记列
-	// 在表头以等宽空格占位。
+	// 表头与内容对齐：所有列标签与数据列同宽且左对齐；提供商列表头
+	// 留空（宽度只由缩写码决定），缩写的含义由表格下方的图例解释。
 	header := "  " +
 		theme.Header.Render("  ") +
-		lipgloss.PlaceHorizontal(codeW, lipgloss.Left, theme.Header.Render(i18n.T("tui.header.provider"))) +
+		strings.Repeat(" ", codeW) +
 		"  " +
 		lipgloss.PlaceHorizontal(acctW, lipgloss.Left, theme.Header.Render(i18n.T("tui.header.account"))) +
 		"  " +
@@ -204,7 +204,7 @@ func legendLines(results []AccountResult) []string {
 }
 
 func computeCodeWidth(results []AccountResult) int {
-	w := runewidth.StringWidth(i18n.T("tui.header.provider"))
+	w := 0
 	for _, r := range results {
 		code := r.ProviderCode
 		if code == "" {
