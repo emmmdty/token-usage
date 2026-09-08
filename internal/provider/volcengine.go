@@ -159,6 +159,49 @@ func arkcliProfiles(bin, home string) ([]ArkcliProfile, error) {
 	return out.Profiles, nil
 }
 
+// ArkcliHomeStatus describes the volc-sso login state of one arkcli HOME.
+type ArkcliHomeStatus struct {
+	LoggedIn   bool   `json:"logged_in"`
+	SsoExpired bool   `json:"sso_expired"`
+	AuthMethod string `json:"auth_method"` // sso | apikey | aksk
+}
+
+// ArkcliHomeLoginState resolves the login state of the given HOME and
+// profile (either may be "") via `arkcli auth whoami --format json`. The
+// profile matters when a HOME holds several logins (e.g. a dead volc-sso
+// coding-plan profile alongside a permanent AK/SK platform profile): the
+// check must reflect the login queries actually use. whoami degrades
+// gracefully when the SSO session died — the API-key identity still
+// answers, with SsoExpired set — which is exactly the state doctor needs
+// to catch before quota queries degrade to n/a.
+func ArkcliHomeLoginState(home, profile string) (ArkcliHomeStatus, error) {
+	bin := lookPathArkcli()
+	if bin == "" {
+		return ArkcliHomeStatus{}, errors.New(i18n.T("provider.volcengine.arkcli_required"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	args := []string{}
+	if profile != "" {
+		args = append(args, "--profile", profile)
+	}
+	args = append(args, "auth", "whoami", "--format", "json")
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Env = arkcliEnv(home)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return ArkcliHomeStatus{}, err
+	}
+	var st ArkcliHomeStatus
+	if err := json.Unmarshal(stdout.Bytes(), &st); err != nil {
+		return ArkcliHomeStatus{}, err
+	}
+	return st, nil
+}
+
 func (p *VolcengineProvider) Name() string {
 	return "volcengine"
 }
@@ -192,10 +235,35 @@ func (p *VolcengineProvider) GetUsage() (*Usage, error) {
 	}
 	usage, err := p.usageViaProbe()
 	if err == nil && arkErr != nil {
-		// Make the silent fallback diagnosable instead of hiding it.
-		usage.Note = fmt.Sprintf(i18n.T("provider.volcengine.note_arkcli_failed"), truncateMsg(arkErr.Error(), 100), usage.Note)
+		// Make the silent fallback diagnosable instead of hiding it. An
+		// expired volc-sso session gets a dedicated note: the raw arkcli
+		// error is a pretty-printed JSON blob whose actionable tail (the
+		// refresh-token rejection) is lost to truncation.
+		if arkcliSsoExpiredErr(arkErr) {
+			if p.arkcliHome != "" {
+				usage.Note = i18n.T("provider.volcengine.note_sso_expired_home", p.arkcliHome)
+			} else {
+				usage.Note = i18n.T("provider.volcengine.note_sso_expired")
+			}
+		} else {
+			usage.Note = fmt.Sprintf(i18n.T("provider.volcengine.note_arkcli_failed"), truncateMsg(arkErr.Error(), 100), usage.Note)
+		}
 	}
 	return usage, err
+}
+
+// arkcliSsoExpiredErr reports whether an arkcli failure is the server
+// rejecting the HOME's stored SSO refresh token ("STS 续期失败", "requires
+// Volcengine Ark SSO STS"). Matching arkcli's own wording is stable: the
+// CLI embeds its re-login hint verbatim in these errors.
+func arkcliSsoExpiredErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "sts 续期失败") ||
+		strings.Contains(msg, "refresh_token is invalid") ||
+		strings.Contains(msg, "requires volcengine ark sso sts")
 }
 
 // arkcliEnv appends the update-suppression and caller-attribution variables
@@ -292,9 +360,15 @@ func (p *VolcengineProvider) usageViaArkcli(profile string) (*Usage, error) {
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
+			// Some arkcli versions print their error JSON to stdout.
+			msg = strings.TrimSpace(stdout.String())
+		}
+		if msg == "" {
 			msg = err.Error()
 		}
-		return nil, fmt.Errorf("%s", i18n.T("provider.volcengine.usage_plan_failed", truncateMsg(msg, 200)))
+		// Collapse (don't clip: callers decide the display budget) so the
+		// error stays a single line and SSO-expiry markers survive.
+		return nil, fmt.Errorf("%s", i18n.T("provider.volcengine.usage_plan_failed", collapseMsg(msg)))
 	}
 
 	var out arkcliOutput
@@ -388,7 +462,16 @@ func keyTail(apiKey string) string {
 	return "…" + string(runes[len(runes)-4:])
 }
 
+// collapseMsg folds all whitespace runs into single spaces — arkcli prints
+// pretty-printed JSON errors whose newlines would otherwise break terminal
+// rendering and eat display budgets.
+func collapseMsg(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// truncateMsg collapses whitespace first and clips to n bytes.
 func truncateMsg(s string, n int) string {
+	s = collapseMsg(s)
 	if len(s) <= n {
 		return s
 	}

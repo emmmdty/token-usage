@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/emmmdty/token-usage/internal/i18n"
 )
 
 func TestVolcengineProbe_Ke_valid(t *testing.T) {
@@ -334,5 +337,177 @@ func TestVolcengineGetUsage_NoMatchFallsBackToProbe(t *testing.T) {
 	}
 	if usage.Rolling.Status != StatusUnknown {
 		t.Errorf("expected unknown windows from probe, got %+v", usage.Rolling)
+	}
+}
+
+// arkcliUsagePlanSsoErr is arkcli's verbatim failure when the server rejects
+// the HOME's stored SSO refresh token (printed to stderr, exit 1).
+const arkcliUsagePlanSsoErr = `{
+  "ok": false,
+  "error": {
+    "type": "error",
+    "message": "auto-discover subscriptions: trade.list_subscribe: ark: ListSubscribeTrade: ark: ListSubscribeTrade requires Volcengine Ark SSO STS, please run ` + "`arkcli auth login volc-sso`" + `: identity volc-2130704960 STS 续期失败: token 交换失败: invalid_request - The request parameter refresh_token is invalid. "
+  }
+}`
+
+func TestArkcliSsoExpiredErr(t *testing.T) {
+	// Mirror the real path: arkcli's JSON arrives on stderr, gets collapsed
+	// by collapseMsg and wrapped by usage_plan_failed, unclipped.
+	wrapped := i18n.T("provider.volcengine.usage_plan_failed", collapseMsg(arkcliUsagePlanSsoErr))
+	if !arkcliSsoExpiredErr(errors.New(wrapped)) {
+		t.Errorf("real arkcli SSO-expiry error must be detected, got %q", wrapped)
+	}
+	for _, msg := range []string{
+		"usage plan failed: exit status 1",
+		"no active coding-plan subscription found",
+		"",
+	} {
+		if arkcliSsoExpiredErr(errors.New(msg)) {
+			t.Errorf("unrelated error %q must not be flagged", msg)
+		}
+	}
+	if arkcliSsoExpiredErr(nil) {
+		t.Error("nil must not be flagged")
+	}
+}
+
+func TestVolcengineGetUsage_SsoExpiredShowsReloginNote(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake arkcli requires a POSIX shell")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "arkcli")
+	script := `#!/bin/sh
+cat >&2 <<'EOF'
+` + arkcliUsagePlanSsoErr + `
+EOF
+exit 1
+`
+	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake arkcli: %v", err)
+	}
+
+	altHome := filepath.Join(dir, "home")
+	if err := os.MkdirAll(altHome, 0755); err != nil {
+		t.Fatal(err)
+	}
+	p := &VolcengineProvider{
+		apiKey:     "ark-k-f1d5",
+		plan:       PlanCoding,
+		profile:    "p2", // skip auto-match; go straight to usage plan
+		arkcliHome: altHome,
+		arkcli:     bin,
+		probeBase:  server.URL,
+	}
+	usage, err := p.GetUsage()
+	if err != nil {
+		t.Fatalf("probe fallback should succeed: %v", err)
+	}
+	if !strings.Contains(usage.Note, "volc-sso login expired") {
+		t.Errorf("expected dedicated SSO-expired note, got %q", usage.Note)
+	}
+	if !strings.Contains(usage.Note, "HOME="+altHome+" arkcli auth login volc-sso") {
+		t.Errorf("expected re-login command with the account HOME, got %q", usage.Note)
+	}
+	if strings.Contains(usage.Note, `"ok"`) {
+		t.Errorf("raw arkcli JSON must not leak into the note, got %q", usage.Note)
+	}
+}
+
+func TestVolcengineGetUsage_SsoExpiredStdoutOnly(t *testing.T) {
+	// arkcli may print its error JSON to stdout instead of stderr; the
+	// capture fallback must still surface the SSO-expiry markers.
+	if runtime.GOOS == "windows" {
+		t.Skip("fake arkcli requires a POSIX shell")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "arkcli")
+	script := `#!/bin/sh
+cat <<'EOF'
+` + arkcliUsagePlanSsoErr + `
+EOF
+exit 1
+`
+	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake arkcli: %v", err)
+	}
+
+	p := &VolcengineProvider{apiKey: "ark-k", plan: PlanCoding, profile: "p1", arkcli: bin, probeBase: server.URL}
+	usage, err := p.GetUsage()
+	if err != nil {
+		t.Fatalf("probe fallback should succeed: %v", err)
+	}
+	if !strings.Contains(usage.Note, "volc-sso login expired") {
+		t.Errorf("expected dedicated SSO-expired note from stdout-captured error, got %q", usage.Note)
+	}
+}
+
+func TestVolcengineGetUsage_GenericArkcliFailureKeepsTruncatedNote(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake arkcli requires a POSIX shell")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "arkcli")
+	script := `#!/bin/sh
+echo 'usage plan failed' >&2
+echo '{"unexpected":"stdout"}'
+exit 1
+`
+	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake arkcli: %v", err)
+	}
+
+	p := &VolcengineProvider{apiKey: "ark-k", plan: PlanCoding, profile: "p1", arkcli: bin, probeBase: server.URL}
+	usage, err := p.GetUsage()
+	if err != nil {
+		t.Fatalf("probe fallback should succeed: %v", err)
+	}
+	if !strings.Contains(usage.Note, "arkcli 查询失败") && !strings.Contains(usage.Note, "arkcli query failed") {
+		t.Errorf("expected generic arkcli-failed note, got %q", usage.Note)
+	}
+	if strings.Contains(usage.Note, "stdout") || strings.Contains(usage.Note, "\n") {
+		t.Errorf("expected collapsed single-line message without stdout noise, got %q", usage.Note)
+	}
+}
+
+func TestArkcliHomeStatus(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake arkcli requires a POSIX shell")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "arkcli")
+	script := `#!/bin/sh
+echo '{"logged_in":true,"sso_expired":true,"account_id":"2130704960"}'
+`
+	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake arkcli: %v", err)
+	}
+	// Point PATH at the fake binary so lookPathArkcli resolves it.
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	st, err := ArkcliHomeLoginState("", "")
+	if err != nil {
+		t.Fatalf("ArkcliHomeLoginState failed: %v", err)
+	}
+	if !st.LoggedIn || !st.SsoExpired {
+		t.Errorf("unexpected status: %+v", st)
 	}
 }

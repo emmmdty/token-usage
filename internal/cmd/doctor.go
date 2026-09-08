@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -41,6 +42,50 @@ var doctorNetworkProbe = func() error {
 	}
 	resp.Body.Close()
 	return nil
+}
+
+// Stubbable arkcli probes for the per-HOME SSO check.
+var (
+	doctorArkcliAvailable  = provider.ArkcliAvailable
+	doctorArkcliHomeStatus = provider.ArkcliHomeLoginState
+)
+
+// checkArkcliSso appends one WARN per volcengine account whose arkcli HOME
+// lost its volc-sso login (the server eventually rejects the refresh token
+// that renews arkcli's short-lived STS credentials, degrading quota queries
+// to n/a). Healthy accounts add no line. AK/SK profiles are exempt: the
+// sso_expired flag is identity-level and irrelevant when queries are signed
+// with a permanent access key.
+func checkArkcliSso(cfg *config.Config, checks []doctorCheck) []doctorCheck {
+	if !doctorArkcliAvailable() {
+		return checks
+	}
+	volc, ok := cfg.Providers["volcengine"]
+	if !ok || !volc.Enabled {
+		return checks
+	}
+	names := make([]string, 0, len(volc.Accounts))
+	for name := range volc.Accounts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		acc := volc.Accounts[name]
+		st, err := doctorArkcliHomeStatus(acc.ArkcliHome, acc.Profile)
+		if err == nil && (!st.SsoExpired || st.AuthMethod == "aksk") {
+			continue
+		}
+		var detail string
+		if err != nil {
+			detail = i18n.T("output.doctor.arkcli_sso_error", "volcengine/"+name, err)
+		} else if acc.ArkcliHome != "" {
+			detail = i18n.T("output.doctor.arkcli_sso_expired", "volcengine/"+name, acc.ArkcliHome)
+		} else {
+			detail = i18n.T("output.doctor.arkcli_sso_expired_default", "volcengine/"+name)
+		}
+		checks = append(checks, doctorCheck{name: i18n.T("output.doctor.arkcli_sso"), status: "WARN", detail: detail})
+	}
+	return checks
 }
 
 var doctorCmd = &cobra.Command{
@@ -81,6 +126,7 @@ quota windows), network reachability, and opencode's auth.json presence.`,
 						detail: i18n.T("output.doctor.arkcli_warn"),
 					})
 				}
+				checks = checkArkcliSso(cfg, checks)
 			}
 		}
 

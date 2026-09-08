@@ -76,6 +76,37 @@ token-usage account add volcengine coding-plan \
 
 之后每个账户都通过自己的登录独立查询，互不影响。
 
+#### 长期免登录（AK/SK，推荐）
+
+volc-sso 的会话由服务端定期吊销（实测约 2 天），需要反复重新登录。把
+coding plan 订阅查询改用**永久 AK/SK**（火山 IAM 访问密钥）即可一劳永逸：
+配额查询走 OpenTOP 管理面签名，与 SSO 会话无关，永不过期。
+
+1. 在火山引擎控制台（每个账号分别操作）创建 IAM 子用户，授予 Ark 只读系统
+   策略（或包含 `ListSubscribeTrade` 与 coding plan 用量查询的自定义策略），
+   并为它创建 API 访问密钥（AK/SK）。
+2. 在该账号的 arkcli HOME 中创建 platform profile（一条命令）：
+
+   ```bash
+   HOME=~/.config/token-usage/arkcli-homes/coding-plan-2 \
+     arkcli config init --profile platform_cn-beijing_default \
+     --access-key <AK> --secret-key <SK> --region cn-beijing
+   ```
+
+3. 在 token-usage 中把账户显式绑定到该 profile（编辑 `~/.config/token-usage/config.yaml`，
+   在对应 volcengine 账户下加 `profile: platform_cn-beijing_default`；
+   不绑定则仍会按 key 尾号自动匹配到已失效的 SSO profile）。
+4. 验证：
+
+   ```bash
+   HOME=~/.config/token-usage/arkcli-homes/coding-plan-2 \
+     arkcli usage plan --profile platform_cn-beijing_default --format json
+   ```
+
+注意：AK/SK 是长期凭证，务必使用只读子用户，不要把主账号的 AK/SK 放进来。
+HOME 里原来的 volc-sso 登录可以保留（失效也不影响查询）；`token-usage doctor`
+会识别 AK/SK profile 并跳过其 SSO 状态检查。
+
 ## 安装
 
 ### Go install

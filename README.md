@@ -81,6 +81,41 @@ token-usage account add volcengine coding-plan \
 
 Each account then queries through its own login, independently.
 
+#### Log in once (AK/SK, recommended)
+
+volc-sso sessions are revoked server-side after a couple of days, forcing
+repeated interactive logins. Switch the subscription query to a **permanent
+AK/SK** (a Volcano IAM access key) instead: quota queries are then signed
+against the OpenTOP control plane directly and never expire.
+
+1. In the Volcano console (once per account), create an IAM sub-user with the
+   Ark read-only system policy (or a custom policy covering
+   `ListSubscribeTrade` and the coding-plan usage queries), and create an
+   API access key for it.
+2. Create a platform profile in that account's arkcli HOME (one command):
+
+   ```bash
+   HOME=~/.config/token-usage/arkcli-homes/coding-plan-2 \
+     arkcli config init --profile platform_cn-beijing_default \
+     --access-key <AK> --secret-key <SK> --region cn-beijing
+   ```
+
+3. Bind the token-usage account to that profile explicitly (edit
+   `~/.config/token-usage/config.yaml`, add `profile: platform_cn-beijing_default`
+   under the volcengine account; without it the key-suffix auto-match still
+   picks the dead SSO profile).
+4. Verify:
+
+   ```bash
+   HOME=~/.config/token-usage/arkcli-homes/coding-plan-2 \
+     arkcli usage plan --profile platform_cn-beijing_default --format json
+   ```
+
+Note: an AK/SK is a long-lived credential — use a read-only sub-user, never
+the root account's own key. The old volc-sso login can stay in the HOME
+(its expiry no longer matters); `token-usage doctor` recognizes AK/SK
+profiles and skips their SSO check.
+
 ## Installation
 
 ### Go install
