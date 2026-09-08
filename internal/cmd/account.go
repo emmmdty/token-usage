@@ -761,25 +761,25 @@ func writeAuthJSON(providers map[string]authProvider) error {
 	}
 	tmpPath := tmpFile.Name()
 	if _, err := tmpFile.Write(data); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpPath)
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("%s", i18n.T("error.config.file_temp_write", err))
 	}
 	if err := tmpFile.Sync(); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpPath)
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("%s", i18n.T("error.config.file_temp_sync", err))
 	}
 	if err := tmpFile.Close(); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("%s", i18n.T("error.config.file_temp_close", err))
 	}
 	if err := os.Chmod(tmpPath, 0600); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("%s", i18n.T("error.config.file_perms", err))
 	}
 	if err := os.Rename(tmpPath, opencodeAuthPath()); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("%s", i18n.T("error.config.file_replace", err))
 	}
 	return nil

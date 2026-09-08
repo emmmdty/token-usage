@@ -1,3 +1,4 @@
+// Package version reports build information for the binary.
 package version
 
 import (

@@ -40,7 +40,7 @@ var doctorNetworkProbe = func() error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return nil
 }
 

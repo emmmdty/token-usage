@@ -183,12 +183,6 @@ func volcengineKeyForEntry(path, ref string) (string, error) {
 	return "", fmt.Errorf("no API key found in %s (provider.<id>.options.apiKey)", path)
 }
 
-// volcengineKeyFromOpencodeJSON extracts the coding-plan API key from the
-// user's opencode config so the volcano provider works with zero setup.
-func volcengineKeyFromOpencodeJSON(path string) (string, error) {
-	return volcengineKeyForEntry(path, "")
-}
-
 // resolveCustomKey returns the query closure for a custom provider account.
 func resolveCustomKey(custom config.CustomProvider, providerID, account string) (func() (*provider.Usage, error), error) {
 	q, ok := provider.LookupKeyQuery(custom.QueryType)

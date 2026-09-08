@@ -75,7 +75,7 @@ Restart your terminal or re-source the rc file afterwards.`,
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		if _, err := f.WriteString(alias); err != nil {
 			return err
@@ -125,7 +125,7 @@ func aliasExists(rcFile, alias string) bool {
 	if err != nil {
 		return false
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {

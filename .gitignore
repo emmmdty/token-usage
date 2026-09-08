@@ -29,3 +29,6 @@ Thumbs.db
 # Build
 dist/
 build/
+
+# Local agent skill state
+.superpowers/

@@ -27,7 +27,7 @@ func TestLangCmd_NoArgs(t *testing.T) {
 
 	rootCmd.SetArgs([]string{"lang"})
 	buf := captureOutput(t, func() {
-		rootCmd.Execute()
+		_ = rootCmd.Execute()
 	})
 	if !strings.Contains(buf, "Current language: en") {
 		t.Errorf("expected 'Current language: en', got: %s", buf)
@@ -51,7 +51,7 @@ func TestLangCmd_SetZh(t *testing.T) {
 
 	rootCmd.SetArgs([]string{"lang", "zh"})
 	buf := captureOutput(t, func() {
-		rootCmd.Execute()
+		_ = rootCmd.Execute()
 	})
 
 	cfg, err := config.LoadOrCreateConfig(configPath)
@@ -74,7 +74,7 @@ func TestLangCmd_SetEn(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	cfg, _ := config.LoadOrCreateConfig(configPath)
 	cfg.Language = "zh"
-	config.SaveConfig(cfg, configPath)
+	_ = config.SaveConfig(cfg, configPath)
 
 	origGetConfigPath := getConfigPath
 	getConfigPath = func() (string, error) { return configPath, nil }
@@ -85,7 +85,7 @@ func TestLangCmd_SetEn(t *testing.T) {
 
 	rootCmd.SetArgs([]string{"lang", "en"})
 	buf := captureOutput(t, func() {
-		rootCmd.Execute()
+		_ = rootCmd.Execute()
 	})
 
 	cfg, err := config.LoadOrCreateConfig(configPath)
@@ -131,7 +131,7 @@ func TestLangCmd_Alias(t *testing.T) {
 
 	rootCmd.SetArgs([]string{"language"})
 	buf := captureOutput(t, func() {
-		rootCmd.Execute()
+		_ = rootCmd.Execute()
 	})
 	if !strings.Contains(buf, "Current language: en") {
 		t.Errorf("expected 'Current language: en' via alias, got: %s", buf)
@@ -146,7 +146,7 @@ func captureOutput(t *testing.T, fn func()) string {
 
 	fn()
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	var buf strings.Builder

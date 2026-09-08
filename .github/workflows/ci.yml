@@ -32,6 +32,11 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
   test:
     name: Test (${{ matrix.os }})
     strategy:
@@ -58,6 +63,35 @@ jobs:
           # can block); credential tests use the encrypted-file backend.
           TOKEN_USAGE_KEYRING_DISABLED: "1"
         run: go test -v -race -count=1 ./...
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test with coverage
+        env:
+          TOKEN_USAGE_MASTER_PASSWORD: ci-test-master-password
+          TOKEN_USAGE_KEYRING_DISABLED: "1"
+        run: go test -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Report total
+        run: go tool cover -func=coverage.out | tail -1
+
+      - name: Upload to Codecov
+        # Tokenless upload works for public repos; never fail CI on it.
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   build:
     name: Build (all platforms)

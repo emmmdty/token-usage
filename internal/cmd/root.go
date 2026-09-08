@@ -1,3 +1,5 @@
+// Package cmd implements the token-usage CLI commands (cobra tree, output
+// rendering and interactive flows).
 package cmd
 
 import (
@@ -141,7 +143,7 @@ GITHUB_TOKEN, or wait for the limit to reset.`,
 		if err != nil {
 			return fmt.Errorf("%s", i18n.T("error.update.download_failed", err))
 		}
-		defer os.Remove(tmpFile)
+		defer func() { _ = os.Remove(tmpFile) }()
 
 		execPath, err := os.Executable()
 		if err != nil {
@@ -198,7 +200,7 @@ func getLatestRelease() (*githubRelease, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusOK {
 		var release githubRelease
@@ -217,7 +219,7 @@ func getLatestRelease() (*githubRelease, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 
 	if resp2.StatusCode == http.StatusOK {
 		var tags []struct {
@@ -336,7 +338,7 @@ func downloadBinary(url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("%s", i18n.T("error.update.download_status", resp.StatusCode))
@@ -362,13 +364,13 @@ func downloadBinary(url string) (string, error) {
 	}
 
 	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
 		return "", err
 	}
 
 	if err := tmpFile.Close(); err != nil {
-		os.Remove(tmpFile.Name())
+		_ = os.Remove(tmpFile.Name())
 		return "", err
 	}
 

@@ -125,16 +125,3 @@ func installCustomHelp(cmd *cobra.Command) {
 		}
 	})
 }
-
-// loadConfigPath is a helper for resolveLanguage
-func loadConfigPath() string {
-	cfgPath, err := getConfigPath()
-	if err != nil {
-		return ""
-	}
-	cfg, err := config.LoadOrCreateConfig(cfgPath)
-	if err != nil {
-		return ""
-	}
-	return cfg.Language
-}

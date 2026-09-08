@@ -1,3 +1,5 @@
+// Package provider implements quota/usage queries per AI provider: local
+// login reuse, API probes and official-CLI (arkcli) integration.
 package provider
 
 import (

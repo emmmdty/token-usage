@@ -1,3 +1,5 @@
+// Package config loads, migrates and persists the token-usage YAML
+// configuration, including per-provider accounts and credential sources.
 package config
 
 import (

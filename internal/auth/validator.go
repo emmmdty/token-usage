@@ -44,7 +44,7 @@ func ValidateAPIKey(apiKey, baseURL string) (*ValidationResponse, error) {
 			Message: i18n.T("error.auth.network_error"),
 		}, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	switch resp.StatusCode {
 	case http.StatusOK:

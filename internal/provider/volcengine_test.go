@@ -26,7 +26,7 @@ func TestVolcengineProbe_Ke_valid(t *testing.T) {
 		}
 		// Real Ark 200 responses typically omit rate-limit headers.
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{
 				{"message": map[string]string{"role": "assistant", "content": ""}},
 			},
@@ -52,7 +52,7 @@ func TestVolcengineProbe_WithRateLimitHeaders(t *testing.T) {
 		w.Header().Set("X-Ratelimit-Limit-Requests", "100")
 		w.Header().Set("X-Ratelimit-Remaining-Requests", "55")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer server.Close()
 
@@ -319,7 +319,7 @@ func TestVolcengineGetUsage_NoMatchFallsBackToProbe(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		probeHit = true
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
 	}))
 	defer server.Close()
 
@@ -377,7 +377,7 @@ func TestVolcengineGetUsage_SsoExpiredShowsReloginNote(t *testing.T) {
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
 	}))
 	defer server.Close()
 
@@ -428,7 +428,7 @@ func TestVolcengineGetUsage_SsoExpiredStdoutOnly(t *testing.T) {
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
 	}))
 	defer server.Close()
 
@@ -460,7 +460,7 @@ func TestVolcengineGetUsage_GenericArkcliFailureKeepsTruncatedNote(t *testing.T)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
 	}))
 	defer server.Close()
 

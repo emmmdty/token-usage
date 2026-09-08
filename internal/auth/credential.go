@@ -1,3 +1,6 @@
+// Package auth stores and validates provider credentials: system keyring
+// with an encrypted-file fallback, plus local login reuse for the Claude,
+// Codex and OpenCode CLI accounts.
 package auth
 
 import (

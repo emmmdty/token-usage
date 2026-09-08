@@ -1,3 +1,4 @@
+// Package models holds the shared usage/quota data shapes used for output.
 package models
 
 import (

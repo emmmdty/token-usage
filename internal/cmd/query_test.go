@@ -110,7 +110,7 @@ func captureStderr(t *testing.T, fn func()) string {
 	}
 	os.Stderr = w
 	fn()
-	w.Close()
+	_ = w.Close()
 	os.Stderr = orig
 	data, _ := io.ReadAll(r)
 	return string(data)

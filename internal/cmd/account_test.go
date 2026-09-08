@@ -337,8 +337,8 @@ func replaceStdin(t *testing.T, s string) func() {
 	if _, err := w.WriteString(s); err != nil {
 		t.Fatalf("stdin write failed: %v", err)
 	}
-	w.Close()
+	_ = w.Close()
 	old := os.Stdin
 	os.Stdin = r
-	return func() { os.Stdin = old; r.Close() }
+	return func() { os.Stdin = old; _ = r.Close() }
 }

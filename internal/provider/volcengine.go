@@ -504,7 +504,7 @@ func (p *VolcengineProvider) usageViaProbe() (*Usage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s", i18n.T("provider.volcengine.probe_failed", err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusTooManyRequests {
 		return nil, fmt.Errorf("%s", i18n.T("provider.volcengine.key_rejected", resp.StatusCode))

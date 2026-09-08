@@ -2,6 +2,13 @@
 
 # token-usage
 
+[![CI](https://github.com/emmmdty/token-usage/actions/workflows/ci.yml/badge.svg)](https://github.com/emmmdty/token-usage/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/emmmdty/token-usage/actions/workflows/codeql.yml/badge.svg)](https://github.com/emmmdty/token-usage/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/emmmdty/token-usage)](https://github.com/emmmdty/token-usage/releases)
+[![Go Reference](https://pkg.go.dev/badge/github.com/emmmdty/token-usage.svg)](https://pkg.go.dev/github.com/emmmdty/token-usage)
+[![codecov](https://codecov.io/gh/emmmdty/token-usage/graph/badge.svg)](https://codecov.io/gh/emmmdty/token-usage)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 多供应商 AI 编程工具用量监控——统一查询 OpenCode Go、Claude、Codex、火山引擎以及用户自定义编码计划供应商的配额用量与可用模型。
 
 ## 功能特性
@@ -108,6 +115,15 @@ HOME 里原来的 volc-sso 登录可以保留（失效也不影响查询）；`t
 会识别 AK/SK profile 并跳过其 SSO 状态检查。
 
 ## 安装
+
+### 安装脚本（推荐）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/emmmdty/token-usage/main/scripts/install.sh | sh
+```
+
+自动下载当前平台最新的 release 二进制，校验 sha256 后安装到 `~/.local/bin`
+（用 `TOKEN_USAGE_INSTALL_DIR` 指定目录；`TOKEN_USAGE_VERSION=v0.7.0` 固定版本）。
 
 ### Go install
 

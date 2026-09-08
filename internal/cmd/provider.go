@@ -629,9 +629,7 @@ func addCustomProvider(cfg *config.Config, cfgPath string, reader *bufio.Reader,
 	queryType := opts.queryType
 	if queryType == "" {
 		opts2 := make([]string, 0, len(provider.BuiltinKeyQueries))
-		for _, qt := range provider.BuiltinKeyQueries {
-			opts2 = append(opts2, qt)
-		}
+		opts2 = append(opts2, provider.BuiltinKeyQueries...)
 		idx, err := promptSelect(reader, i18n.T("prompt.query_impl"), opts2)
 		if err != nil {
 			return err

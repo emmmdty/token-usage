@@ -10,7 +10,6 @@ import (
 	"github.com/emmmdty/token-usage/internal/config"
 	"github.com/emmmdty/token-usage/internal/i18n"
 	"github.com/emmmdty/token-usage/internal/models"
-	"github.com/emmmdty/token-usage/internal/provider"
 	"github.com/emmmdty/token-usage/internal/tui"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -205,12 +204,6 @@ func toTuiResults(results []accountResult) []tui.AccountResult {
 		}
 	}
 	return tuiResults
-}
-
-// makeProviderResult converts a provider.Usage into the JSON shape with the
-// provider-specific windows already mapped.
-func convertUsage(u *provider.Usage) *models.Usage {
-	return models.FromProviderUsage(u)
 }
 
 func init() {

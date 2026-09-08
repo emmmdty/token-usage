@@ -122,7 +122,7 @@ func (p *CodexProvider) GetUsage() (*Usage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s", i18n.T("provider.codex.make_request", err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// 读取响应体
 	respBody, err := io.ReadAll(resp.Body)

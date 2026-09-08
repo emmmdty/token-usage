@@ -2,6 +2,13 @@ English | [简体中文](README.zh-CN.md)
 
 # token-usage
 
+[![CI](https://github.com/emmmdty/token-usage/actions/workflows/ci.yml/badge.svg)](https://github.com/emmmdty/token-usage/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/emmmdty/token-usage/actions/workflows/codeql.yml/badge.svg)](https://github.com/emmmdty/token-usage/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/emmmdty/token-usage)](https://github.com/emmmdty/token-usage/releases)
+[![Go Reference](https://pkg.go.dev/badge/github.com/emmmdty/token-usage.svg)](https://pkg.go.dev/github.com/emmmdty/token-usage)
+[![codecov](https://codecov.io/gh/emmmdty/token-usage/graph/badge.svg)](https://codecov.io/gh/emmmdty/token-usage)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Multi-provider AI coding tool usage monitor — query quota usage and available models across OpenCode Go, Claude, Codex, Volcano Engine, and user-defined custom coding-plan providers.
 
 ## Features
@@ -117,6 +124,16 @@ the root account's own key. The old volc-sso login can stay in the HOME
 profiles and skips their SSO check.
 
 ## Installation
+
+### Install script (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/emmmdty/token-usage/main/scripts/install.sh | sh
+```
+
+Downloads the latest release binary for your platform, verifies its
+sha256 checksum, and installs it to `~/.local/bin` (override with
+`TOKEN_USAGE_INSTALL_DIR`; pin a version with `TOKEN_USAGE_VERSION=v0.7.0`).
 
 ### Go install
 

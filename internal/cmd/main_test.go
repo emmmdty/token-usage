@@ -10,6 +10,6 @@ import (
 // CI and on developer machines. With the variable set, credential
 // operations deterministically use the encrypted-file backend.
 func TestMain(m *testing.M) {
-	os.Setenv("TOKEN_USAGE_KEYRING_DISABLED", "1")
+	_ = os.Setenv("TOKEN_USAGE_KEYRING_DISABLED", "1")
 	os.Exit(m.Run())
 }

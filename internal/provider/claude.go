@@ -143,7 +143,7 @@ func (p *ClaudeProvider) GetUsage() (*Usage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s", i18n.T("provider.claude.make_request", err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// 处理429 rate limit
 	if resp.StatusCode == http.StatusTooManyRequests {
@@ -353,7 +353,7 @@ func (p *ClaudeProvider) loadCachedUsage() *Usage {
 }
 
 func (p *ClaudeProvider) invalidateCache() {
-	os.Remove(p.getCachePath())
+	_ = os.Remove(p.getCachePath())
 	p.mu.Lock()
 	p.cache = nil
 	p.mu.Unlock()
@@ -369,6 +369,8 @@ func (p *ClaudeProvider) saveCachedUsage(usage *Usage) {
 	}
 
 	data, _ := json.Marshal(cached)
-	os.MkdirAll(filepath.Dir(p.getCachePath()), 0700)
-	os.WriteFile(p.getCachePath(), data, 0600)
+	// Best-effort cache write: the live query already succeeded, so a
+	// failed cache update must not fail the request.
+	_ = os.MkdirAll(filepath.Dir(p.getCachePath()), 0700)
+	_ = os.WriteFile(p.getCachePath(), data, 0600)
 }

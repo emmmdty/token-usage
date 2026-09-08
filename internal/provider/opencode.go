@@ -50,7 +50,7 @@ func (p *OpenCodeProvider) GetUsage() (*Usage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s", i18n.T("provider.opencode.make_request", err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%s", i18n.T("provider.opencode.api_error", resp.StatusCode))

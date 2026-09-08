@@ -1,3 +1,4 @@
+// Package tui renders terminal output: quota tables, theming and legends.
 package tui
 
 import (

@@ -1,3 +1,4 @@
+// Package client talks to OpenCode's HTTP API for usage and model queries.
 package client
 
 import (
@@ -61,7 +62,7 @@ func (c *Client) doRequest(endpoint string) ([]byte, error) {
 		}
 
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			return nil, err
 		}

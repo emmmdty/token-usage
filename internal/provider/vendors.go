@@ -52,7 +52,7 @@ func getJSON(url, authHeader string, out interface{}) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return resp.StatusCode, err
@@ -99,8 +99,9 @@ func zaiGLMQuery(apiKey, baseURL string) (*Usage, error) {
 	var out zaiResp
 	status, err := getJSON(endpoint, "Bearer "+apiKey, &out)
 	if err != nil && status == http.StatusUnauthorized {
-		// Retry with the bare token (open.bigmodel.cn style).
-		status, err = getJSON(endpoint, apiKey, &out)
+		// Retry with the bare token (open.bigmodel.cn style). The retry's
+		// status is unused, so only the error matters here.
+		_, err = getJSON(endpoint, apiKey, &out)
 	}
 	if err != nil {
 		return nil, err

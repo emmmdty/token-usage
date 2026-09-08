@@ -1,3 +1,4 @@
+// Package manager coordinates multi-provider queries and aggregation.
 package manager
 
 import (

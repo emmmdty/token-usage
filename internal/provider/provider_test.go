@@ -26,7 +26,7 @@ func TestClaudeProvider_GetUsage(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"five_hour": map[string]interface{}{
 				"utilization": 35.0,
 				"resets_at":   time.Now().Add(3 * time.Hour).Format(time.RFC3339),
@@ -50,7 +50,7 @@ func TestClaudeProvider_GetUsage(t *testing.T) {
 		},
 	}
 	data, _ := json.Marshal(creds)
-	os.WriteFile(credsPath, data, 0600)
+	_ = os.WriteFile(credsPath, data, 0600)
 
 	provider := NewClaudeProviderWithEndpoint(credsPath, server.URL)
 	provider.cachePath = filepath.Join(tmpDir, "claude_cache.json")
@@ -82,7 +82,7 @@ func TestClaudeProvider_HeaderFallback(t *testing.T) {
 		w.Header().Set("anthropic-ratelimit-unified-5h-utilization", "0.42")
 		w.Header().Set("anthropic-ratelimit-unified-5h-reset", "1893456000") // 2030-01-01
 		w.Header().Set("anthropic-ratelimit-unified-5h-status", "ok")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"seven_day": map[string]interface{}{
 				"utilization": 12.0,
 				"resets_at":   time.Now().Add(5 * 24 * time.Hour).Format(time.RFC3339),
@@ -101,7 +101,7 @@ func TestClaudeProvider_HeaderFallback(t *testing.T) {
 		},
 	}
 	data, _ := json.Marshal(creds)
-	os.WriteFile(credsPath, data, 0600)
+	_ = os.WriteFile(credsPath, data, 0600)
 
 	provider := NewClaudeProviderWithEndpoint(credsPath, server.URL)
 	provider.cachePath = filepath.Join(tmpDir, "claude_cache.json")
@@ -143,7 +143,7 @@ func TestClaudeProvider_IsAvailable(t *testing.T) {
 		},
 	}
 	data, _ := json.Marshal(creds)
-	os.WriteFile(credsPath, data, 0600)
+	_ = os.WriteFile(credsPath, data, 0600)
 
 	provider = NewClaudeProviderWithEndpoint(credsPath, "")
 	if !provider.IsAvailable() {
@@ -154,7 +154,7 @@ func TestClaudeProvider_IsAvailable(t *testing.T) {
 func TestCodexProvider_GetUsage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"plan_type": "plus",
 			"rate_limit": map[string]interface{}{
 				"allowed":       true,
@@ -183,7 +183,7 @@ func TestCodexProvider_GetUsage(t *testing.T) {
 		},
 	}
 	data, _ := json.Marshal(auth)
-	os.WriteFile(authPath, data, 0600)
+	_ = os.WriteFile(authPath, data, 0600)
 
 	provider := NewCodexProviderWithEndpoint(authPath, server.URL)
 	usage, err := provider.GetUsage()
@@ -216,7 +216,7 @@ func TestOpenCodeProvider_GetUsage(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"usage": map[string]interface{}{
 				"rolling": map[string]interface{}{
 					"status":   "ok",

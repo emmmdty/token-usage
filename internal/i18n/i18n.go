@@ -1,3 +1,5 @@
+// Package i18n provides embedded en/zh message catalogs and lookup with
+// Sprintf-style argument interpolation.
 package i18n
 
 import (
