@@ -6,7 +6,6 @@ English | [简体中文](README.zh-CN.md)
 [![CodeQL](https://github.com/emmmdty/token-usage/actions/workflows/codeql.yml/badge.svg)](https://github.com/emmmdty/token-usage/actions/workflows/codeql.yml)
 [![Release](https://img.shields.io/github/v/release/emmmdty/token-usage)](https://github.com/emmmdty/token-usage/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/emmmdty/token-usage.svg)](https://pkg.go.dev/github.com/emmmdty/token-usage)
-[![codecov](https://codecov.io/gh/emmmdty/token-usage/graph/badge.svg)](https://codecov.io/gh/emmmdty/token-usage)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Multi-provider AI coding tool usage monitor — query quota usage and available models across OpenCode Go, Claude, Codex, Volcano Engine, and user-defined custom coding-plan providers.

@@ -6,7 +6,6 @@
 [![CodeQL](https://github.com/emmmdty/token-usage/actions/workflows/codeql.yml/badge.svg)](https://github.com/emmmdty/token-usage/actions/workflows/codeql.yml)
 [![Release](https://img.shields.io/github/v/release/emmmdty/token-usage)](https://github.com/emmmdty/token-usage/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/emmmdty/token-usage.svg)](https://pkg.go.dev/github.com/emmmdty/token-usage)
-[![codecov](https://codecov.io/gh/emmmdty/token-usage/graph/badge.svg)](https://codecov.io/gh/emmmdty/token-usage)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 多供应商 AI 编程工具用量监控——统一查询 OpenCode Go、Claude、Codex、火山引擎以及用户自定义编码计划供应商的配额用量与可用模型。

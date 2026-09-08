@@ -85,14 +85,6 @@ jobs:
       - name: Report total
         run: go tool cover -func=coverage.out | tail -1
 
-      - name: Upload to Codecov
-        # Tokenless upload works for public repos; never fail CI on it.
-        uses: codecov/codecov-action@v5
-        with:
-          files: coverage.out
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-
   build:
     name: Build (all platforms)
     runs-on: ubuntu-latest
