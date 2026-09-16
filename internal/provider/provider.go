@@ -17,6 +17,19 @@ type QuotaWindow struct {
 // provider only exposes a validity probe). Rendered as "n/a".
 const StatusUnknown = "unknown"
 
+// Canonical window-status vocabulary. Providers map their API's own status
+// strings onto these so the TUI and JSON output can treat every row alike:
+//
+//	"ok"        – window resolved with a percent
+//	"exhausted" – limit reached; usage is blocked until ResetsAt
+//	"idle"      – no active usage window right now
+//	"none"      – the provider has no such window at all (e.g. Codex monthly)
+//	"unknown"   – cannot be determined; rendered "n/a"
+const (
+	StatusExhausted = "exhausted"
+	StatusNone      = "none"
+)
+
 // Plan flavors for providers that carry multiple subscription types.
 const (
 	PlanCoding = "coding"

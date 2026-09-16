@@ -253,6 +253,58 @@ func TestOpenCodeProvider_GetUsage(t *testing.T) {
 	}
 }
 
+// Verified against the live endpoint (2026-09-16): a used-up window reports
+// status "rate-limited" with percent 100 and a resetsAt. It must map onto
+// the canonical exhausted status instead of falling through to n/a, and the
+// reset time (what the user waits for) must survive.
+func TestOpenCodeProvider_RateLimitedWindowMapsToExhausted(t *testing.T) {
+	reset := time.Now().Add(17 * 24 * time.Hour).Format(time.RFC3339)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"usage": map[string]interface{}{
+				"rolling": map[string]interface{}{"status": "ok", "percent": 0, "resetsAt": reset},
+				"weekly":  map[string]interface{}{"status": "ok", "percent": 4, "resetsAt": reset},
+				"monthly": map[string]interface{}{"status": "rate-limited", "percent": 100, "resetsAt": reset},
+			},
+		})
+	}))
+	defer server.Close()
+
+	p := NewOpenCodeProviderWithEndpoint("test-api-key", server.URL)
+	usage, err := p.GetUsage()
+	if err != nil {
+		t.Fatalf("failed to get usage: %v", err)
+	}
+
+	if usage.Monthly.Status != StatusExhausted || usage.Monthly.Percent != 100 {
+		t.Errorf("monthly = %+v, want exhausted/100", usage.Monthly)
+	}
+	if usage.Monthly.ResetAt.IsZero() {
+		t.Error("monthly ResetAt should be parsed when exhausted")
+	}
+	if usage.Rolling.Status != "ok" || usage.Weekly.Status != "ok" {
+		t.Errorf("rolling/weekly status = %q/%q, want ok/ok", usage.Rolling.Status, usage.Weekly.Status)
+	}
+}
+
+func TestNormalizeWindowStatus(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"ok", "ok"},
+		{"idle", "idle"},
+		{"rate-limited", StatusExhausted},
+		{"exhausted", StatusExhausted},
+		{StatusNone, StatusNone},
+		{"", StatusUnknown},
+		{"some-future-status", StatusUnknown},
+	}
+	for _, tt := range tests {
+		if got := normalizeWindowStatus(tt.in); got != tt.want {
+			t.Errorf("normalizeWindowStatus(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 // A window without a reset_at timestamp must resolve to a zero time (which
 // the TUI renders as "n/a"), not to 1970-01-01 (which renders as a
 // misleading "expired").
@@ -279,6 +331,9 @@ func TestCodexProvider_MissingResetAtIsNot1970(t *testing.T) {
 	}
 	if usage.Weekly.ResetAt.IsZero() {
 		t.Error("weekly ResetAt should be parsed when present")
+	}
+	if usage.Monthly.Status != StatusNone {
+		t.Errorf("monthly status = %q, want none (Codex has no monthly limit)", usage.Monthly.Status)
 	}
 }
 

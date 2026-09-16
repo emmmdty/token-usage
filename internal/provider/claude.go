@@ -198,6 +198,10 @@ func (p *ClaudeProvider) GetUsage() (*Usage, error) {
 		},
 	}
 
+	// Claude 没有 monthly 限制（只有 5h/7d 窗口），显式标记为 none，
+	// 让 TUI 显示"不适用"而不是与无法解析的窗口共用同一个 n/a。
+	usage.Monthly = QuotaWindow{Status: StatusNone}
+
 	// Fallback：若 JSON body 缺少 5h/7d 字段（API 结构变更或返回为空），
 	// 退回解析响应头 anthropic-ratelimit-unified-* （旧版 API 在响应头中返回这些值）。
 	// 利用率为 0 且无重置时间表示"该窗口当前没有活跃会话"（空闲超过窗口时长），

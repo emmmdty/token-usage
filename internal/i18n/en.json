@@ -96,6 +96,7 @@
   "tui.empty": "No accounts configured. Run 'token-usage account add' to get started.",
   "tui.error": "error",
   "tui.idle": "idle",
+  "tui.none": "—",
   "tui.compact.title": "Token Usage",
   "tui.note": "  %s",
   "output.provider.list.header": "PROVIDERS",

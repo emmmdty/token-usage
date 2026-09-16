@@ -188,6 +188,11 @@ func (p *CodexProvider) GetUsage() (*Usage, error) {
 		Status:  "ok",
 	}
 
+	// Codex has no monthly limit at all; mark the window explicitly "none"
+	// so it renders as not-applicable instead of an ambiguous n/a (which is
+	// what a genuinely undeterminable window shows).
+	usage.Monthly = QuotaWindow{Status: StatusNone}
+
 	return usage, nil
 }
 

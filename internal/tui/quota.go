@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/emmmdty/token-usage/internal/i18n"
 	"github.com/emmmdty/token-usage/internal/models"
+	"github.com/emmmdty/token-usage/internal/provider"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -286,8 +287,18 @@ func formatCompact(results []AccountResult, style QuotaStyle, theme Theme) strin
 }
 
 func formatPercentCompact(window models.QuotaWindow, style QuotaStyle, theme Theme) string {
+	if window.Status == provider.StatusExhausted {
+		pct := window.Percent
+		if pct < 100 {
+			pct = 100
+		}
+		return theme.Danger.Render(fmt.Sprintf("%d%%", pct))
+	}
 	if window.Status == "idle" {
 		return theme.Muted.Render(i18n.T("tui.idle"))
+	}
+	if window.Status == provider.StatusNone {
+		return theme.Muted.Render(i18n.T("tui.none"))
 	}
 	if window.Status != "ok" {
 		return theme.Muted.Render("n/a")
@@ -340,11 +351,26 @@ func formatQuotaRow(result AccountResult, codeW, acctW, colWidth, barWidth int, 
 	return row + "\n"
 }
 
-// windowStatus reports anything that is not a resolved "ok" window
-// (unknown placeholders, empty status from providers without that window)
-// as n/a instead of a misleading 0%. A dedicated "idle" status (the
-// provider has no active usage window right now) gets its own label.
+// windowStatus reports anything that is not a resolved "ok" window by a
+// dedicated label instead of a misleading 0%: exhausted windows render as a
+// full danger bar with their reset time, "none" marks a window the provider
+// does not have at all (e.g. Codex monthly), "idle" means no active usage
+// window right now, and everything else (unknown placeholders, empty status)
+// falls back to n/a.
 func formatQuotaCell(window models.QuotaWindow, barWidth int, style QuotaStyle, theme Theme) string {
+	if window.Status == provider.StatusExhausted {
+		pct := window.Percent
+		if pct < 100 {
+			pct = 100 // exhausted means the limit is reached, even if the API omits percent
+		}
+		bar := renderBar(pct, barWidth, style, theme)
+		pctStr := formatPercent(pct, style, theme)
+		reset := theme.Muted.Render(" " + formatResetTimeFixed(window.ResetsAt))
+		return bar + " " + pctStr + reset
+	}
+	if window.Status == provider.StatusNone {
+		return theme.Muted.Render(padRight("  "+i18n.T("tui.none"), barWidth+13))
+	}
 	if window.Status == "idle" {
 		return theme.Muted.Render(padRight("  "+i18n.T("tui.idle"), barWidth+13))
 	}
@@ -487,12 +513,24 @@ func computeSummary(results []AccountResult, style QuotaStyle) string {
 }
 
 // maxKnownPercent returns the highest percentage across windows that carry
-// real data. Windows with status != "ok" (unknown placeholders) are ignored;
-// hasData is false when no window resolved.
+// real data. Exhausted windows always count as (at least) 100% so an
+// exhausted account classifies as critical and is never recommended as the
+// best available. Other windows with status != "ok" (none/idle/unknown) are
+// ignored; hasData is false when no window resolved.
 func maxKnownPercent(u *models.Usage) (int, bool) {
 	maxPercent := 0
 	hasData := false
 	for _, w := range []models.QuotaWindow{u.Rolling, u.Weekly, u.Monthly} {
+		if w.Status == provider.StatusExhausted {
+			hasData = true
+			if w.Percent > maxPercent {
+				maxPercent = w.Percent
+			}
+			if maxPercent < 100 {
+				maxPercent = 100
+			}
+			continue
+		}
 		if w.Status != "ok" {
 			continue
 		}
@@ -515,6 +553,9 @@ func findBestAccount(results []AccountResult) string {
 		maxPercent, hasData := maxKnownPercent(r.Usage)
 		if !hasData {
 			continue // unknown usage cannot be compared
+		}
+		if maxPercent >= 100 {
+			continue // exhausted: nothing available to recommend
 		}
 		if maxPercent < bestPercent {
 			bestPercent = maxPercent

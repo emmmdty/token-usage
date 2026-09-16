@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/emmmdty/token-usage/internal/models"
+	"github.com/emmmdty/token-usage/internal/provider"
 )
 
 func TestFormatQuotaOverviewEmpty(t *testing.T) {
@@ -387,6 +388,94 @@ func TestIdleWindowRendersIdleLabel(t *testing.T) {
 	compact := stripANSI(formatPercentCompact(models.QuotaWindow{Status: "idle"}, style, theme))
 	if !strings.Contains(compact, "idle") {
 		t.Errorf("idle compact = %q, want the idle label", compact)
+	}
+}
+
+// An exhausted window (e.g. OpenCode Go "rate-limited") must render as a
+// maxed bar with its reset time instead of n/a — the user needs to know the
+// limit is hit and when it comes back. A "none" window (the provider has no
+// such window at all, e.g. Codex monthly) renders as "—" so it no longer
+// collides with exhausted or unknown.
+func TestExhaustedAndNoneWindowsRender(t *testing.T) {
+	theme := NewTheme()
+	style := DefaultQuotaStyle()
+	reset := time.Now().Add(17 * 24 * time.Hour)
+
+	exhausted := models.QuotaWindow{Status: provider.StatusExhausted, Percent: 100, ResetsAt: reset}
+	cell := stripANSI(formatQuotaCell(exhausted, 10, style, theme))
+	if !strings.Contains(cell, "100%") {
+		t.Errorf("exhausted cell = %q, want 100%%", cell)
+	}
+	if strings.Contains(cell, "n/a") {
+		t.Errorf("exhausted cell = %q, want no n/a", cell)
+	}
+	if !strings.Contains(cell, formatResetTime(reset)) {
+		t.Errorf("exhausted cell = %q, want the reset time", cell)
+	}
+	if got := strings.Count(cell, "█"); got != 10 {
+		t.Errorf("exhausted cell bar = %d filled cells, want 10", got)
+	}
+
+	// An exhausted window without a percent is still a full bar.
+	noPct := models.QuotaWindow{Status: provider.StatusExhausted, ResetsAt: reset}
+	if got := strings.Count(stripANSI(formatQuotaCell(noPct, 10, style, theme)), "█"); got != 10 {
+		t.Errorf("exhausted cell without percent = %d filled cells, want 10", got)
+	}
+
+	compact := stripANSI(formatPercentCompact(exhausted, style, theme))
+	if !strings.Contains(compact, "100%") {
+		t.Errorf("exhausted compact = %q, want 100%%", compact)
+	}
+
+	noneCell := stripANSI(formatQuotaCell(models.QuotaWindow{Status: provider.StatusNone}, 10, style, theme))
+	if strings.Contains(noneCell, "n/a") {
+		t.Errorf("none cell = %q, want no n/a", noneCell)
+	}
+	if !strings.Contains(noneCell, "—") {
+		t.Errorf("none cell = %q, want the not-applicable label", noneCell)
+	}
+	noneCompact := stripANSI(formatPercentCompact(models.QuotaWindow{Status: provider.StatusNone}, style, theme))
+	if strings.Contains(noneCompact, "n/a") || !strings.Contains(noneCompact, "—") {
+		t.Errorf("none compact = %q, want the not-applicable label", noneCompact)
+	}
+}
+
+// Exhausted windows count as 100%: the summary must classify the account as
+// critical, and findBestAccount must not recommend an exhausted account over
+// a healthy one. "none" windows are ignored entirely (not unknowns).
+func TestExhaustedAccountIsCriticalAndNotBest(t *testing.T) {
+	exhausted := &models.Usage{
+		Rolling: models.QuotaWindow{Status: "ok", Percent: 10},
+		Weekly:  models.QuotaWindow{Status: "ok", Percent: 5},
+		Monthly: models.QuotaWindow{Status: provider.StatusExhausted, Percent: 100},
+	}
+	if pct, ok := maxKnownPercent(exhausted); !ok || pct != 100 {
+		t.Errorf("maxKnownPercent(exhausted) = %d, %v; want 100, true", pct, ok)
+	}
+
+	results := []AccountResult{
+		{Name: "capped", Usage: exhausted},
+		{Name: "light", Usage: &models.Usage{
+			Rolling: models.QuotaWindow{Status: "ok", Percent: 10},
+			Weekly:  models.QuotaWindow{Status: "ok", Percent: 5},
+			Monthly: models.QuotaWindow{Status: provider.StatusNone},
+		}},
+	}
+	if best := findBestAccount(results); best != "light" {
+		t.Errorf("findBestAccount = %q, want 'light'", best)
+	}
+
+	summary := computeSummary(results, DefaultQuotaStyle())
+	if !strings.Contains(summary, "1 critical") {
+		t.Errorf("summary = %q, want 1 critical", summary)
+	}
+	if strings.Contains(summary, "unknown") {
+		t.Errorf("summary = %q, want no unknown (none windows are not unknowns)", summary)
+	}
+
+	// With nothing usable left, no account is recommended at all.
+	if best := findBestAccount(results[:1]); best != "" {
+		t.Errorf("findBestAccount(all exhausted) = %q, want empty", best)
 	}
 }
 

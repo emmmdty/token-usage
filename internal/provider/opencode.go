@@ -33,6 +33,23 @@ func (p *OpenCodeProvider) Name() string {
 	return "opencode"
 }
 
+// normalizeWindowStatus maps the API's window status onto the shared
+// vocabulary. Verified against the live endpoint (2026-09-16): a used-up
+// window reports status "rate-limited" with percent 100 and a resetsAt, so
+// it becomes the canonical exhausted status instead of n/a. Recognized
+// pass-throughs stay as-is; anything unrecognized falls back to unknown so
+// a future status can never masquerade as healthy.
+func normalizeWindowStatus(s string) string {
+	switch s {
+	case "ok", "idle", StatusExhausted, StatusNone:
+		return s
+	case "rate-limited":
+		return StatusExhausted
+	default:
+		return StatusUnknown
+	}
+}
+
 func (p *OpenCodeProvider) IsAvailable() bool {
 	return p.apiKey != ""
 }
@@ -88,7 +105,7 @@ func (p *OpenCodeProvider) GetUsage() (*Usage, error) {
 	// Parse rolling
 	resetAt, _ := time.Parse(time.RFC3339, result.Usage.Rolling.ResetsAt)
 	usage.Rolling = QuotaWindow{
-		Status:  result.Usage.Rolling.Status,
+		Status:  normalizeWindowStatus(result.Usage.Rolling.Status),
 		Percent: result.Usage.Rolling.Percent,
 		ResetAt: resetAt,
 	}
@@ -96,7 +113,7 @@ func (p *OpenCodeProvider) GetUsage() (*Usage, error) {
 	// Parse weekly
 	resetAt, _ = time.Parse(time.RFC3339, result.Usage.Weekly.ResetsAt)
 	usage.Weekly = QuotaWindow{
-		Status:  result.Usage.Weekly.Status,
+		Status:  normalizeWindowStatus(result.Usage.Weekly.Status),
 		Percent: result.Usage.Weekly.Percent,
 		ResetAt: resetAt,
 	}
@@ -104,7 +121,7 @@ func (p *OpenCodeProvider) GetUsage() (*Usage, error) {
 	// Parse monthly
 	resetAt, _ = time.Parse(time.RFC3339, result.Usage.Monthly.ResetsAt)
 	usage.Monthly = QuotaWindow{
-		Status:  result.Usage.Monthly.Status,
+		Status:  normalizeWindowStatus(result.Usage.Monthly.Status),
 		Percent: result.Usage.Monthly.Percent,
 		ResetAt: resetAt,
 	}
