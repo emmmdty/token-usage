@@ -151,9 +151,8 @@ func formatTable(results []AccountResult, style QuotaStyle, theme Theme, width i
 		}
 	}
 
-	best := findBestAccount(results)
-	if best != "" {
-		b.WriteString("  " + theme.Muted.Render(i18n.T("tui.best_available")) + theme.Success.Render(best) + "\n")
+	if best := findBestAccount(results); best != nil {
+		b.WriteString("  " + theme.Muted.Render(i18n.T("tui.best_available")) + theme.Success.Render(bestAccountLabel(*best)) + "\n")
 	}
 
 	nextReset := findNextReset(results)
@@ -275,9 +274,8 @@ func formatCompact(results []AccountResult, style QuotaStyle, theme Theme) strin
 		}
 	}
 
-	best := findBestAccount(results)
-	if best != "" {
-		b.WriteString("\n  " + theme.Muted.Render(i18n.T("tui.best_available")) + theme.Success.Render(best) + "\n")
+	if best := findBestAccount(results); best != nil {
+		b.WriteString("\n  " + theme.Muted.Render(i18n.T("tui.best_available")) + theme.Success.Render(bestAccountLabel(*best)) + "\n")
 	}
 	nextReset := findNextReset(results)
 	if nextReset != "" {
@@ -542,11 +540,15 @@ func maxKnownPercent(u *models.Usage) (int, bool) {
 	return maxPercent, hasData
 }
 
-func findBestAccount(results []AccountResult) string {
-	bestName := ""
+// findBestAccount returns the account with the most headroom across its known
+// quota windows, or nil when every account is exhausted or has no usable
+// data.
+func findBestAccount(results []AccountResult) *AccountResult {
+	var best *AccountResult
 	bestPercent := 101
 
-	for _, r := range results {
+	for i := range results {
+		r := &results[i]
 		if r.Error != "" {
 			continue
 		}
@@ -559,10 +561,25 @@ func findBestAccount(results []AccountResult) string {
 		}
 		if maxPercent < bestPercent {
 			bestPercent = maxPercent
-			bestName = providerCell(r)
+			best = r
 		}
 	}
-	return bestName
+	return best
+}
+
+// bestAccountLabel identifies the recommended account exactly: the provider
+// plus the account identity, since one provider can hold several accounts.
+// Rows without a distinct account fall back to the provider cell alone.
+func bestAccountLabel(r AccountResult) string {
+	provider := providerCell(r)
+	account := accountCell(r)
+	if account == "" || account == provider {
+		return provider
+	}
+	if strings.HasPrefix(account, provider+" · ") {
+		return account // the full row name already carries the identity
+	}
+	return provider + " · " + account
 }
 
 func findNextReset(results []AccountResult) string {

@@ -204,8 +204,41 @@ func TestFindBestAccount(t *testing.T) {
 		{Name: "errored", Error: "fail"},
 	}
 	best := findBestAccount(results)
-	if best != "light" {
-		t.Errorf("expected 'light' as best account, got: %q", best)
+	if best == nil || best.Name != "light" {
+		t.Errorf("expected 'light' as best account, got: %+v", best)
+	}
+}
+
+// One provider can hold several accounts: the recommendation must name the
+// exact account, not just the provider.
+func TestBestAccountLabelIncludesAccount(t *testing.T) {
+	r := AccountResult{
+		Name:            "OpenCode Go · user@example.com",
+		ProviderDisplay: "OpenCode Go",
+		AccountLabel:    "user@example.com",
+		Usage: &models.Usage{
+			Rolling: models.QuotaWindow{Status: "ok", Percent: 0},
+			Weekly:  models.QuotaWindow{Status: "ok", Percent: 0},
+			Monthly: models.QuotaWindow{Status: "ok", Percent: 10},
+		},
+	}
+	if got := bestAccountLabel(r); got != "OpenCode Go · user@example.com" {
+		t.Errorf("bestAccountLabel = %q, want provider plus account", got)
+	}
+
+	// The provider-readable identity wins over the plain label, mirroring
+	// the account column.
+	r.Usage.Account = "user@example.com secondary"
+	if got := bestAccountLabel(r); got != "OpenCode Go · user@example.com secondary" {
+		t.Errorf("bestAccountLabel = %q, want the exact account", got)
+	}
+
+	// A row without a distinct account must not render a duplicate.
+	r.AccountLabel = ""
+	r.Usage.Account = ""
+	r.Name = "OpenCode Go"
+	if got := bestAccountLabel(r); got != "OpenCode Go" {
+		t.Errorf("bestAccountLabel = %q, want provider only", got)
 	}
 }
 
@@ -461,8 +494,8 @@ func TestExhaustedAccountIsCriticalAndNotBest(t *testing.T) {
 			Monthly: models.QuotaWindow{Status: provider.StatusNone},
 		}},
 	}
-	if best := findBestAccount(results); best != "light" {
-		t.Errorf("findBestAccount = %q, want 'light'", best)
+	if best := findBestAccount(results); best == nil || best.Name != "light" {
+		t.Errorf("findBestAccount = %+v, want 'light'", best)
 	}
 
 	summary := computeSummary(results, DefaultQuotaStyle())
@@ -474,8 +507,8 @@ func TestExhaustedAccountIsCriticalAndNotBest(t *testing.T) {
 	}
 
 	// With nothing usable left, no account is recommended at all.
-	if best := findBestAccount(results[:1]); best != "" {
-		t.Errorf("findBestAccount(all exhausted) = %q, want empty", best)
+	if best := findBestAccount(results[:1]); best != nil {
+		t.Errorf("findBestAccount(all exhausted) = %+v, want nil", best)
 	}
 }
 
